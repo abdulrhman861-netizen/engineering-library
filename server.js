@@ -144,8 +144,43 @@ app.post('/api/materials/upload',auth,upload.single('file'),async(req,res)=>{
 });
 app.get('/api/materials/department/:deptId',async(req,res)=>{ if(!configured(res))return; const values=[req.params.deptId]; let sql='select * from study_materials where department_code=$1'; if(req.query.stage){values.push(req.query.stage);sql+=' and stage_code=$2';} sql+=' order by created_at desc'; const r=await pool.query(sql,values); res.json(r.rows); });
 app.delete('/api/materials/:id',auth,async(req,res)=>{ const r=await pool.query('delete from study_materials where material_id=$1 returning storage_path,file_path',[req.params.id]); if(!r.rowCount)return res.status(404).json({success:false,error:'الملزمة غير موجودة'}); await removeStored(r.rows[0].storage_path,r.rows[0].file_path); res.json({success:true}); });
-app.post('/api/materials/print',async(_req,res)=>res.json({success:true,message:'تم تسجيل طلب الطباعة'}));
+app.post('/api/materials/print',async(req,res)=>{
+  if(!configured(res))return;
 
+  const materialId=Number(req.body.materialId);
+
+  if(!Number.isInteger(materialId)||materialId<1){
+    return res.status(400).json({
+      success:false,
+      error:'رقم الملزمة غير صحيح'
+    });
+  }
+
+  const material=await pool.query(
+    'select title,file_path from study_materials where material_id=$1',
+    [materialId]
+  );
+
+  if(!material.rowCount){
+    return res.status(404).json({
+      success:false,
+      error:'الملزمة غير موجودة'
+    });
+  }
+
+  const item=material.rows[0];
+
+  const order=await pool.query(
+    "insert into student_print_files(original_name,file_path,storage_path,copies,color_mode,student_name,phone,notes) values($1,$2,null,1,'BW','','','طلب طباعة ملزمة من المكتبة الرقمية') returning file_id",
+    [item.title,item.file_path]
+  );
+
+  res.json({
+    success:true,
+    message:'تم إرسال طلب الطباعة إلى موظفي المكتبة',
+    orderId:order.rows[0].file_id
+  });
+});
 app.post('/upload-student-file',upload.single('file'),async(req,res)=>{
   if(!configured(res)||!req.file)return;
   const stored=await storeFile(req.file,'print-orders');
