@@ -224,6 +224,61 @@ app.get('/api/tasks',auth,async(_req,res)=>{ const r=await pool.query("select t.
 app.post('/api/tasks/create',auth,admin,async(req,res)=>{ const {taskType,title,description,assignedTo,expectedCompletionAt}=req.body; let userId=null; if(assignedTo){const u=await pool.query('select user_id from users where username=$1 or full_name=$1 limit 1',[assignedTo]);userId=u.rows[0]?.user_id||null;} const r=await pool.query('insert into tasks(task_type,title,description,assigned_to,expected_completion_at) values($1,$2,$3,$4,$5) returning *',[taskType||'عام',title,description||'',userId,expectedCompletionAt||null]); res.json({success:true,task:r.rows[0]}); });
 app.post('/api/tasks/complete',auth,async(req,res)=>{ await pool.query("update tasks set status='COMPLETED',completed_by=$1,completed_at=now() where task_id=$2",[req.user.userId,req.body.taskId]); res.json({success:true}); });
 
+// نظام المهام التشغيلي: الإنشاء للجميع، الاستلام لموظف واحد، والإنجاز لمن استلم فقط.
+app.get('/api/work-tasks',auth,async(req,res)=>{
+  const r=await pool.query(`select t.*,creator.full_name created_by_name,assignee.full_name assigned_to_name,
+    extract(epoch from(now()-t.created_at))/3600 age_hours,
+    greatest(0,coalesce(t.amount_total,0)-coalesce(t.amount_paid,0)) balance,
+    (t.assigned_to=$1) is_mine
+    from tasks t left join users creator on creator.user_id=t.created_by left join users assignee on assignee.user_id=t.assigned_to
+    where t.status in ('PENDING','IN_PROGRESS')
+    order by case when t.status='IN_PROGRESS' and t.assigned_to=$1 then 0 when t.status='PENDING' then 1 else 2 end,
+             t.created_at asc`,[req.user.userId]);
+  res.json({success:true,tasks:r.rows,userId:req.user.userId});
+});
+app.post('/api/work-tasks/batch',auth,async(req,res)=>{
+  const customerName=String(req.body.customerName||'').trim(),customerPhone=String(req.body.customerPhone||'').trim();
+  const types=Array.isArray(req.body.types)?req.body.types.map(x=>String(x).trim()).filter(Boolean).slice(0,12):[];
+  const allowed=['طباعة','تنضيد','استنساخ','تجليد','توزيع','تصميم','أخرى'];
+  if(!customerName||!customerPhone||!types.length)return res.status(400).json({success:false,error:'اسم الطالب ورقم الهاتف ونوع مهمة واحد على الأقل مطلوبة'});
+  if(types.some(x=>!allowed.includes(x)))return res.status(400).json({success:false,error:'نوع مهمة غير صحيح'});
+  const total=Math.max(0,Number(req.body.amountTotal||0)),paid=Math.max(0,Number(req.body.amountPaid||0));
+  if(paid>total)return res.status(400).json({success:false,error:'المبلغ المدفوع لا يمكن أن يتجاوز المبلغ الكلي'});
+  const perTotal=total/types.length,perPaid=paid/types.length,created=[];
+  const client=await pool.connect();
+  try{await client.query('begin');for(const type of types){const r=await client.query(`insert into tasks(task_type,title,description,created_by,customer_name,customer_phone,notes,amount_total,amount_paid,expected_completion_at)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning task_id`,[type,`${type} - ${customerName}`,String(req.body.description||'').trim(),req.user.userId,customerName,customerPhone,String(req.body.notes||'').trim(),perTotal,perPaid,req.body.dueAt||null]);created.push(r.rows[0].task_id);}await client.query('commit');res.json({success:true,taskIds:created,message:`تمت إضافة ${created.length} مهام منفصلة`});}
+  catch(e){await client.query('rollback');throw e;}finally{client.release();}
+});
+app.patch('/api/work-tasks/:id/claim',auth,async(req,res)=>{
+  const r=await pool.query("update tasks set assigned_to=$1,status='IN_PROGRESS',claimed_at=now(),updated_at=now() where task_id=$2 and status='PENDING' and assigned_to is null returning task_id",[req.user.userId,req.params.id]);
+  if(!r.rowCount)return res.status(409).json({success:false,error:'المهمة استلمها موظف آخر أو لم تعد متاحة'});
+  res.json({success:true});
+});
+app.patch('/api/work-tasks/:id/complete',auth,async(req,res)=>{
+  const r=await pool.query("update tasks set status='COMPLETED',completed_by=$1,completed_at=now(),updated_at=now() where task_id=$2 and status='IN_PROGRESS' and assigned_to=$1 returning task_id",[req.user.userId,req.params.id]);
+  if(!r.rowCount)return res.status(403).json({success:false,error:'لا يستطيع إكمال المهمة إلا الموظف الذي استلمها'});
+  res.json({success:true});
+});
+app.patch('/api/work-tasks/:id/payment',auth,async(req,res)=>{
+  const paid=Math.max(0,Number(req.body.amountPaid||0));
+  const r=await pool.query("update tasks set amount_paid=least(amount_total,$1),notes=case when $2='' then notes else concat_ws(E'\\n',notes,$2) end,updated_at=now() where task_id=$3 and (assigned_to=$4 or $5='ADMIN') returning amount_total,amount_paid",[paid,String(req.body.note||'').trim(),req.params.id,req.user.userId,req.user.role]);
+  if(!r.rowCount)return res.status(403).json({success:false,error:'لا تملك صلاحية تعديل هذه المهمة'});res.json({success:true,task:r.rows[0]});
+});
+app.get('/api/admin/work-tasks',auth,admin,async(req,res)=>{
+  const limit=Math.min(1000,Math.max(1,Number(req.query.limit||500)));
+  const r=await pool.query(`select t.*,creator.full_name created_by_name,assignee.full_name assigned_to_name,finisher.full_name completed_by_name,
+    greatest(0,coalesce(t.amount_total,0)-coalesce(t.amount_paid,0)) balance
+    from tasks t left join users creator on creator.user_id=t.created_by left join users assignee on assignee.user_id=t.assigned_to left join users finisher on finisher.user_id=t.completed_by
+    order by case when t.status='PENDING' then 0 when t.status='IN_PROGRESS' then 1 else 2 end,t.created_at desc limit $1`,[limit]);res.json({success:true,tasks:r.rows});
+});
+app.get('/api/admin/debts',auth,admin,async(_req,res)=>{
+  const r=await pool.query(`select coalesce(customer_name,'غير محدد') customer_name,coalesce(customer_phone,'-') customer_phone,
+    sum(greatest(0,coalesce(amount_total,0)-coalesce(amount_paid,0))) balance,count(*) task_count,max(created_at) last_task
+    from tasks where coalesce(amount_total,0)>coalesce(amount_paid,0) and status<>'CANCELLED'
+    group by customer_name,customer_phone order by balance desc,last_task desc`);res.json({success:true,debts:r.rows});
+});
+
 app.post('/api/discussions/create',auth,async(req,res)=>{
   const {studentName,gender,degreeType,thesisTitle,discussionDate,locationHall,committee=[]}=req.body;
   const required=degreeType==='MASTER'?4:6;
