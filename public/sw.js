@@ -1,4 +1,4 @@
-const CACHE_NAME = 'library-app-online-v3';
+const CACHE_NAME = 'library-app-online-v4-1';
 
 // قائمة الملفات والصفحات الواجب تخزينها للأوفلاين
 const urlsToCache = [
@@ -11,6 +11,8 @@ const urlsToCache = [
   '/stages.html',
   '/files.html',
   '/student-files.html',
+  '/print-id.html',
+  '/print-ids.html',
   '/admin-upload.html',
   '/fonts/Khalid Art bold.ttf',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css',
@@ -56,7 +58,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // استراتيجية Cache First للملفات الإستاتيكية
+  // صفحات HTML من الشبكة أولاً حتى تصل التحديثات فوراً.
+  if (event.request.mode === 'navigate' || reqUrl.pathname.endsWith('.html') || reqUrl.pathname === '/') {
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+    return;
+  }
+
+  // استراتيجية Cache First للملفات الثابتة فقط
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
