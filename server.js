@@ -60,6 +60,10 @@ function admin(req,res,next) {
   if (req.user?.role !== 'ADMIN') return res.status(403).json({ success:false,error:'هذه العملية للمدير فقط' });
   next();
 }
+function accounting(req,res,next) {
+  if (!['ADMIN','ACCOUNTANT'].includes(req.user?.role)) return res.status(403).json({success:false,error:'هذه العملية للمدير أو المحاسب فقط'});
+  next();
+}
 function safeName(name) {
   const ext = path.extname(name).toLowerCase();
   return `${Date.now()}-${crypto.randomUUID()}${ext}`;
@@ -122,7 +126,7 @@ app.post('/api/admin/create-employee', auth, admin, async (req,res) => {
   const { phone,password,fullName,role='STAFF' }=req.body;
   if (!phone || !password || !fullName) return res.status(400).json({success:false,error:'جميع الحقول مطلوبة'});
   const hash=await bcrypt.hash(password,10);
-  try { const r=await pool.query('insert into users(full_name,username,password_hash,role) values($1,$2,$3,$4) returning user_id,full_name,username,role',[fullName,phone,hash,['STAFF','TYPIST','ADMIN'].includes(role)?role:'STAFF']); res.json({success:true,user:r.rows[0]}); }
+  try { const r=await pool.query('insert into users(full_name,username,password_hash,role) values($1,$2,$3,$4) returning user_id,full_name,username,role',[fullName,phone,hash,['STAFF','TYPIST','ACCOUNTANT','ADMIN'].includes(role)?role:'STAFF']); res.json({success:true,user:r.rows[0]}); }
   catch(e){ res.status(400).json({success:false,error:e.code==='23505'?'اسم المستخدم موجود مسبقاً':e.message}); }
 });
 app.post('/api/admin/set-location',auth,admin,async(req,res)=>{ await pool.query("insert into settings(setting_key,setting_value) values('library_location',$1::jsonb) on conflict(setting_key) do update set setting_value=excluded.setting_value,updated_at=now()",[JSON.stringify({lat:req.body.lat,lng:req.body.lng,radiusMeters:req.body.radiusMeters||50})]);res.json({success:true}); });
@@ -278,6 +282,48 @@ app.get('/api/admin/debts',auth,admin,async(_req,res)=>{
     from tasks where coalesce(amount_total,0)>coalesce(amount_paid,0) and status<>'CANCELLED'
     group by customer_name,customer_phone order by balance desc,last_task desc`);res.json({success:true,debts:r.rows});
 });
+
+function dateRange(req){
+  const today=new Date().toISOString().slice(0,10);
+  return {from:/^\d{4}-\d{2}-\d{2}$/.test(req.query.from||'')?req.query.from:today,to:/^\d{4}-\d{2}-\d{2}$/.test(req.query.to||'')?req.query.to:today};
+}
+app.post('/api/accounting/entries',auth,accounting,async(req,res)=>{
+  const type=['INCOME','EXPENSE'].includes(req.body.entryType)?req.body.entryType:null;
+  const category=['SALES','SALARY','RENT','ELECTRICITY','POS_COMMISSION','SUPPLIES','OTHER'].includes(req.body.category)?req.body.category:null;
+  const method=['CASH','GREEN_CARD','BLACK_CARD','BANK'].includes(req.body.paymentMethod)?req.body.paymentMethod:'CASH';
+  const amount=Number(req.body.amount);
+  if(!type||!category||!Number.isFinite(amount)||amount<0)return res.status(400).json({success:false,error:'بيانات الحركة المالية غير صحيحة'});
+  const r=await pool.query('insert into financial_entries(entry_date,entry_type,category,description,amount,payment_method,created_by) values(coalesce($1,current_date),$2,$3,$4,$5,$6,$7) returning *',[req.body.entryDate||null,type,category,String(req.body.description||'').trim(),amount,method,req.user.userId]);
+  res.json({success:true,entry:r.rows[0]});
+});
+app.get('/api/accounting/entries',auth,accounting,async(req,res)=>{const {from,to}=dateRange(req);const r=await pool.query(`select f.*,u.full_name created_by_name from financial_entries f left join users u on u.user_id=f.created_by where entry_date between $1 and $2 order by entry_date desc,created_at desc limit 1000`,[from,to]);res.json({success:true,entries:r.rows,from,to});});
+app.delete('/api/accounting/entries/:id',auth,admin,async(req,res)=>{const r=await pool.query('delete from financial_entries where entry_id=$1 returning entry_id',[req.params.id]);res.json({success:Boolean(r.rowCount)});});
+app.post('/api/accounting/pos',auth,accounting,async(req,res)=>{
+  const card=['GREEN_CARD','BLACK_CARD'].includes(req.body.cardType)?req.body.cardType:null,direction=req.body.direction==='OUT'?'OUT':'IN';
+  const transfer=Number(req.body.transferAmount),commission=Number(req.body.commission||0);
+  if(!card||!Number.isFinite(transfer)||transfer<0||!Number.isFinite(commission)||commission<0)return res.status(400).json({success:false,error:'بيانات حركة POS غير صحيحة'});
+  const r=await pool.query('insert into pos_transactions(transaction_date,card_type,direction,transfer_amount,commission,notes,created_by) values(coalesce($1,current_date),$2,$3,$4,$5,$6,$7) returning *',[req.body.transactionDate||null,card,direction,transfer,commission,String(req.body.notes||'').trim(),req.user.userId]);res.json({success:true,transaction:r.rows[0]});
+});
+app.get('/api/accounting/pos',auth,accounting,async(req,res)=>{const {from,to}=dateRange(req);const r=await pool.query(`select p.*,u.full_name created_by_name from pos_transactions p left join users u on u.user_id=p.created_by where transaction_date between $1 and $2 order by transaction_date desc,created_at desc limit 1000`,[from,to]);res.json({success:true,transactions:r.rows,from,to});});
+app.get('/api/accounting/summary',auth,accounting,async(req,res)=>{
+  const {from,to}=dateRange(req);
+  const [f,p,partners]=await Promise.all([
+    pool.query(`select coalesce(sum(amount) filter(where entry_type='INCOME'),0) income,coalesce(sum(amount) filter(where entry_type='EXPENSE'),0) expenses,
+      coalesce(sum(case when payment_method='CASH' then case when entry_type='INCOME' then amount else -amount end else 0 end),0) cash_net,
+      coalesce(sum(case when payment_method='GREEN_CARD' then case when entry_type='INCOME' then amount else -amount end else 0 end),0) green_net,
+      coalesce(sum(case when payment_method='BLACK_CARD' then case when entry_type='INCOME' then amount else -amount end else 0 end),0) black_net
+      from financial_entries where entry_date between $1 and $2`,[from,to]),
+    pool.query(`select coalesce(sum(commission),0) commissions,
+      coalesce(sum(case when card_type='GREEN_CARD' then case when direction='IN' then transfer_amount else -transfer_amount end else 0 end),0) green_transfers,
+      coalesce(sum(case when card_type='BLACK_CARD' then case when direction='IN' then transfer_amount else -transfer_amount end else 0 end),0) black_transfers
+      from pos_transactions where transaction_date between $1 and $2`,[from,to]),
+    pool.query('select partner_id,partner_name,share_percent from partners where is_active=true order by partner_id')
+  ]);
+  const a=f.rows[0],b=p.rows[0],profit=Number(a.income)-Number(a.expenses)+Number(b.commissions);
+  res.json({success:true,from,to,income:Number(a.income),expenses:Number(a.expenses),posCommissions:Number(b.commissions),netProfit:profit,cash:Number(a.cash_net),greenCard:Number(a.green_net)+Number(b.green_transfers),blackCard:Number(a.black_net)+Number(b.black_transfers),partners:partners.rows.map(x=>({...x,profitShare:profit*Number(x.share_percent)/100}))});
+});
+app.get('/api/accounting/partners',auth,accounting,async(_req,res)=>{const r=await pool.query('select * from partners where is_active=true order by partner_id');res.json({success:true,partners:r.rows});});
+app.post('/api/accounting/partners',auth,admin,async(req,res)=>{const name=String(req.body.partnerName||'').trim(),share=Number(req.body.sharePercent);if(!name||!Number.isFinite(share)||share<=0||share>100)return res.status(400).json({success:false,error:'اسم الشريك والنسبة الصحيحة مطلوبان'});const total=await pool.query('select coalesce(sum(share_percent),0) total from partners where is_active=true');if(Number(total.rows[0].total)+share>100)return res.status(400).json({success:false,error:'مجموع نسب الشركاء لا يمكن أن يتجاوز 100%'});const r=await pool.query('insert into partners(partner_name,share_percent) values($1,$2) returning *',[name,share]);res.json({success:true,partner:r.rows[0]});});
 
 app.post('/api/discussions/create',auth,async(req,res)=>{
   const {studentName,gender,degreeType,thesisTitle,discussionDate,locationHall,committee=[]}=req.body;

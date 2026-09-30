@@ -63,6 +63,7 @@
             <span class="navbar-brand text-white fw-bold"><i class="fa-solid fa-user-shield me-2"></i>لوحة تحكم إدارة المكتبة الرقمية</span>
             <div>
                 <a href="admin-tasks.html" class="btn btn-sm btn-warning me-2"><i class="fa-solid fa-box-archive me-1"></i> المهام والديون</a>
+                <a href="accounting.html" class="btn btn-sm btn-success me-2"><i class="fa-solid fa-calculator me-1"></i> الحسابات وPOS</a>
                 <a href="/" class="btn btn-sm btn-outline-light me-2"><i class="fa-solid fa-house me-1"></i> الرئيسية</a>
                 <span class="badge bg-danger">صلاحيات المدير (Admin)</span>
             </div>
@@ -208,17 +209,21 @@
                         <i class="fa-solid fa-user-plus me-2"></i>إضافة موظف جديد للكادر
                     </h5>
                     <form id="addEmployeeForm" onsubmit="createNewEmployee(event)" class="row g-3">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="form-label small fw-bold">الاسم الكامل:</label>
                             <input type="text" id="empFullName" class="form-control" required placeholder="اسم الموظف">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="form-label small fw-bold">رقم الهاتف (اسم المستخدم):</label>
                             <input type="text" id="empPhone" class="form-control" required placeholder="07xxxxxxxxx">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="form-label small fw-bold">كلمة المرور:</label>
                             <input type="password" id="empPassword" class="form-control" required placeholder="******">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold">نوع الحساب:</label>
+                            <select id="empRole" class="form-select"><option value="STAFF">موظف</option><option value="TYPIST">منضد</option><option value="ACCOUNTANT">محاسب</option></select>
                         </div>
                         <div class="col-12 text-end">
                             <button type="submit" class="btn btn-success fw-bold px-4">
@@ -427,12 +432,13 @@
             const fullName = document.getElementById('empFullName').value;
             const phone = document.getElementById('empPhone').value;
             const password = document.getElementById('empPassword').value;
+            const role = document.getElementById('empRole').value;
 
             try {
                 const res = await fetch('/api/admin/create-employee', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fullName, phone, password, role: 'STAFF' })
+                    body: JSON.stringify({ fullName, phone, password, role })
                 });
                 const data = await res.json();
                 if (data.success) {
