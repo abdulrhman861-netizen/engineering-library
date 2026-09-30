@@ -29,7 +29,7 @@
 <body>
 
     <div class="upload-card">
-        <a href="admin.html" class="home-link" title="العودة للوحة التحكم"><i class="fas fa-arrow-left"></i></a>
+        <a href="staff.html" class="home-link" title="العودة"><i class="fas fa-arrow-left"></i></a>
         <h2>📂 إضافة ملازم جديدة</h2>
         
         <form id="handoutForm">
@@ -71,10 +71,10 @@
 
     <script>
         // التحقق من جلسة المدير بدلاً من مفتاح ظاهر داخل الرابط
-        const token = sessionStorage.getItem('adminToken');
+        const token = sessionStorage.getItem('adminToken') || localStorage.getItem('employeeToken');
         if (!token) { 
             alert("غير مصرح لك بالدخول لهذه الصفحة!");
-            window.location.href = 'admin.html'; 
+            window.location.href = 'staff.html'; 
         }
         (async()=>{try{const [dr,sr]=await Promise.all([fetch('/api/departments'),fetch('/api/stages')]);if(dr.ok){const ds=await dr.json();department.innerHTML=ds.map(d=>`<option value="${d.code}">${d.name}</option>`).join('')}if(sr.ok){const ss=await sr.json();stage.innerHTML=ss.map(s=>`<option value="${s.code}">${s.name}</option>`).join('')}}catch{}})();
 
@@ -103,7 +103,7 @@
                     alert('❌ فشل الرفع: ' + (result.message || result.error || 'حدث خطأ غير معروف')); 
                 }
             } catch (err) { 
-                alert('❌ خطأ في الاتصال بالسيرفر! تأكد من تشغيل node server.js'); 
+                alert('❌ تعذر الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة.'); 
             } finally { 
                 btn.innerHTML = `<i class="fas fa-cloud-upload-alt me-1"></i> إضافة إلى المكتبة الرقمية`; 
                 btn.disabled = false; 

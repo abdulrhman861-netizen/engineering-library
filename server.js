@@ -26,10 +26,12 @@ const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: { re
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => cb(null, [
-    'application/pdf','image/jpeg','image/png','image/webp',
-    'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  ].includes(file.mimetype))
+  fileFilter: (_req, file, cb) => {
+    const allowedMime = ['application/pdf','image/jpeg','image/png','image/webp','image/heic','image/heif','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    const allowedExt = ['.pdf','.jpg','.jpeg','.png','.webp','.heic','.heif','.doc','.docx'];
+    const ok = allowedMime.includes(String(file.mimetype||'').toLowerCase()) || allowedExt.includes(path.extname(file.originalname||'').toLowerCase());
+    cb(ok ? null : new Error('نوع الملف غير مدعوم. استخدم PDF أو Word أو صورة'), ok);
+  }
 });
 
 app.set('trust proxy', 1);
@@ -140,7 +142,27 @@ app.post('/api/materials/upload',auth,upload.single('file'),async(req,res)=>{
   catch(e){ await removeStored(stored.storagePath,stored.url); throw e; }
 });
 app.get('/api/materials/department/:deptId',async(req,res)=>{ if(!configured(res))return; const values=[req.params.deptId]; let sql='select material_id,department_code,stage_code,subject_name,title,doctor_name,created_at from study_materials where department_code=$1'; if(req.query.stage){values.push(req.query.stage);sql+=' and stage_code=$2';} sql+=' order by created_at desc'; const r=await pool.query(sql,values); res.json(r.rows); });
-app.delete('/api/materials/:id',auth,async(req,res)=>{ const r=await pool.query('delete from study_materials where material_id=$1 returning storage_path,file_path',[req.params.id]); if(!r.rowCount)return res.status(404).json({success:false,error:'الملزمة غير موجودة'}); await removeStored(r.rows[0].storage_path,r.rows[0].file_path); res.json({success:true}); });
+app.get('/api/admin/materials',auth,admin,async(req,res)=>{
+  if(!configured(res))return;
+  const r=await pool.query(`
+    select m.material_id,m.title,m.doctor_name,m.department_code,m.stage_code,m.created_at,
+           coalesce(d.name,m.department_code) department_name,
+           coalesce(s.name,m.stage_code) stage_name
+    from study_materials m
+    left join departments d on d.code=m.department_code
+    left join stages s on s.code=m.stage_code
+    order by m.created_at desc
+  `);
+  res.json({success:true,materials:r.rows});
+});
+app.delete('/api/materials/:id',auth,admin,async(req,res)=>{
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<1)return res.status(400).json({success:false,error:'رقم الملزمة غير صحيح'});
+  const r=await pool.query('delete from study_materials where material_id=$1 returning title,storage_path,file_path',[id]);
+  if(!r.rowCount)return res.status(404).json({success:false,error:'الملزمة غير موجودة'});
+  await removeStored(r.rows[0].storage_path,r.rows[0].file_path);
+  res.json({success:true,message:'تم حذف الملزمة وملفها نهائياً',title:r.rows[0].title});
+});
 app.post('/api/materials/print',async(req,res)=>{
   if(!configured(res))return;
   const materialId=Number(req.body.materialId);
@@ -183,6 +205,20 @@ app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query("s
 app.get('/api/student-files/:id',auth,async(req,res)=>{const r=await pool.query('select file_id as id,original_name as "originalName",file_path as url,second_file_path as "secondUrl",print_type as "printType",copies,color_mode,student_name,phone,notes from student_print_files where file_id=$1',[req.params.id]);if(!r.rowCount)return res.status(404).json({success:false,error:'الطلب غير موجود'});res.json(r.rows[0]);});
 app.patch('/api/student-files/:id/status',auth,async(req,res)=>{ const status=['QUEUED','PRINTING','COMPLETED','CANCELLED'].includes(req.body.status)?req.body.status:'QUEUED'; await pool.query("update student_print_files set status=$1,completed_by=case when $1='COMPLETED' then $2 else completed_by end,completed_at=case when $1='COMPLETED' then now() else completed_at end where file_id=$3",[status,req.user.userId,req.params.id]); res.json({success:true}); });
 app.delete('/api/student-files/:id',auth,async(req,res)=>{ const r=await pool.query('delete from student_print_files where file_id=$1 returning storage_path,file_path,second_storage_path,second_file_path',[req.params.id]); if(r.rowCount){await removeStored(r.rows[0].storage_path,r.rows[0].file_path);await removeStored(r.rows[0].second_storage_path,r.rows[0].second_file_path);} res.json({success:true}); });
+app.post('/api/student-files/:id/promote-to-material',auth,async(req,res)=>{
+  const {title,doctorName,department,stage}=req.body;
+  if(!title||!department||!stage)return res.status(400).json({success:false,error:'اسم الملزمة والقسم والمرحلة مطلوبة'});
+  const source=await pool.query('select original_name,file_path,print_type from student_print_files where file_id=$1',[req.params.id]);
+  if(!source.rowCount)return res.status(404).json({success:false,error:'ملف الطباعة غير موجود'});
+  if(source.rows[0].print_type==='ID_CARD')return res.status(400).json({success:false,error:'لا يمكن تحويل طلب هوية إلى ملزمة'});
+  const response=await fetch(source.rows[0].file_path);
+  if(!response.ok)return res.status(502).json({success:false,error:'تعذر قراءة الملف الأصلي'});
+  const buffer=Buffer.from(await response.arrayBuffer());
+  if(buffer.length>MAX_UPLOAD_MB*1024*1024)return res.status(400).json({success:false,error:`حجم الملف يتجاوز ${MAX_UPLOAD_MB}MB`});
+  const stored=await storeFile({originalname:source.rows[0].original_name,mimetype:response.headers.get('content-type')||'application/octet-stream',buffer},'materials');
+  try{const r=await pool.query('insert into study_materials(department_code,stage_code,subject_name,title,doctor_name,file_path,storage_path,uploaded_by) values($1,$2,$3,$4,$5,$6,$7,$8) returning material_id',[department,stage,title,title,doctorName||'',stored.url,stored.storagePath,req.user.userId]);res.json({success:true,message:'تمت إضافة الملف إلى الملازم',materialId:r.rows[0].material_id});}
+  catch(e){await removeStored(stored.storagePath,stored.url);throw e;}
+});
 
 app.get('/api/tasks',auth,async(_req,res)=>{ const r=await pool.query("select t.*,coalesce(u.full_name,'كادر المكتبة') assigned_to_name,cu.full_name completed_by_name from tasks t left join users u on u.user_id=t.assigned_to left join users cu on cu.user_id=t.completed_by order by t.created_at desc"); res.json(r.rows); });
 app.post('/api/tasks/create',auth,admin,async(req,res)=>{ const {taskType,title,description,assignedTo,expectedCompletionAt}=req.body; let userId=null; if(assignedTo){const u=await pool.query('select user_id from users where username=$1 or full_name=$1 limit 1',[assignedTo]);userId=u.rows[0]?.user_id||null;} const r=await pool.query('insert into tasks(task_type,title,description,assigned_to,expected_completion_at) values($1,$2,$3,$4,$5) returning *',[taskType||'عام',title,description||'',userId,expectedCompletionAt||null]); res.json({success:true,task:r.rows[0]}); });
@@ -201,7 +237,7 @@ app.post('/api/attendance/check-out',auth,async(req,res)=>{ const r=await pool.q
 app.post('/api/attendance/check',auth,async(req,res)=>{ if(req.body.type==='خروج'){const r=await pool.query("update attendance set check_out=now(),regular_hours=least(8,extract(epoch from(now()-check_in))/3600),overtime_hours=greatest(0,extract(epoch from(now()-check_in))/3600-8) where attendance_id=(select attendance_id from attendance where user_id=$1 and check_out is null order by check_in desc limit 1) returning *",[req.user.userId]);return res.json({success:Boolean(r.rowCount),hours:r.rows[0]?.regular_hours});} const r=await pool.query('insert into attendance(user_id) values($1) returning *',[req.user.userId]);res.json({success:true,data:r.rows[0]}); });
 app.get('/api/admin/attendance-reports',auth,admin,async(_req,res)=>{const r=await pool.query('select a.*,u.full_name employee_name from attendance a join users u using(user_id) order by check_in desc limit 500');res.json({success:true,logs:r.rows});});
 
-app.use((err,_req,res,_next)=>{ console.error(err); if(err instanceof multer.MulterError)return res.status(400).json({success:false,error:`حجم الملف يتجاوز ${MAX_UPLOAD_MB}MB`}); if(String(err.message||'').startsWith('فشل تخزين الملف'))return res.status(502).json({success:false,error:'تعذر تخزين الملف. تحقق من مفتاح Supabase وإعدادات Storage'}); res.status(500).json({success:false,error:'حدث خطأ في الخادم',detail:process.env.NODE_ENV==='development'?err.message:undefined}); });
+app.use((err,_req,res,_next)=>{ console.error(err); if(err instanceof multer.MulterError)return res.status(400).json({success:false,error:`حجم الملف يتجاوز ${MAX_UPLOAD_MB}MB`}); if(String(err.message||'').startsWith('نوع الملف غير مدعوم'))return res.status(400).json({success:false,error:err.message}); if(String(err.message||'').startsWith('فشل تخزين الملف'))return res.status(502).json({success:false,error:'تعذر تخزين الملف. تحقق من مساحة Supabase ونوع الملف المسموح'}); res.status(500).json({success:false,error:'حدث خطأ في الخادم',detail:process.env.NODE_ENV==='development'?err.message:undefined}); });
 app.listen(PORT,'0.0.0.0',()=>{
   console.log(`Engineering Library: http://localhost:${PORT}`);
   if (IS_PRODUCTION) console.log('Online production mode enabled');

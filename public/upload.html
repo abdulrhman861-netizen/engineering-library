@@ -40,8 +40,8 @@
     <h2>ارفع ملفك للطباعة</h2>
     <p>يمكنك رفع ملفات PDF، Word، أو صور (JPG/PNG)</p>
 
-    <div class="field"><label for="studentName">اسم الطالب</label><input id="studentName" placeholder="الاسم الثلاثي" maxlength="120"></div>
-    <div class="field"><label for="phone">رقم الهاتف</label><input id="phone" type="tel" placeholder="07xxxxxxxxx" maxlength="20"></div>
+    <div class="field"><label for="studentName">اسم الطالب *</label><input id="studentName" placeholder="الاسم الثلاثي أو مستطرق" maxlength="120" required></div>
+    <div class="field"><label for="phone">رقم الهاتف *</label><input id="phone" type="tel" placeholder="07xxxxxxxxx أو مستطرق" maxlength="20" required></div>
     <div class="field"><label for="copies">عدد النسخ</label><input id="copies" type="number" value="1" min="1" max="100"></div>
     <div class="field"><label for="colorMode">نوع الطباعة</label><select id="colorMode"><option value="BW">أبيض وأسود</option><option value="COLOR">ملون</option></select></div>
     <div class="field"><label for="printType">نوع الطلب</label><select id="printType" onchange="updatePrintType()"><option value="DOCUMENT">ملفات وصور عادية</option><option value="ID_CARD">طباعة هوية (الوجه والظهر جنباً إلى جنب)</option></select></div>
@@ -82,13 +82,17 @@
             return;
         }
 
+        const studentName=document.getElementById('studentName').value.trim();
+        const phone=document.getElementById('phone').value.trim();
+        if(!studentName||!phone){alert('اسم الطالب ورقم الهاتف مطلوبان. اكتب مستطرق إذا لم تتوفر البيانات.');return;}
+        if([...fileInput.files].some(f=>f.size>50*1024*1024)){alert('يوجد ملف أكبر من 50MB. صغّر الملف ثم حاول مجدداً.');return;}
         btn.disabled = true;
         const printType=document.getElementById('printType').value;
         if(printType==='ID_CARD'&&fileInput.files.length!==2){alert('اختر صورتين فقط: صورة وجه الهوية ثم صورة ظهر الهوية');btn.disabled=false;return;}
         const formData = new FormData();
         for(const file of fileInput.files)formData.append('files',file);
-        formData.append('studentName', document.getElementById('studentName').value.trim());
-        formData.append('phone', document.getElementById('phone').value.trim());
+        formData.append('studentName', studentName);
+        formData.append('phone', phone);
         formData.append('copies', document.getElementById('copies').value);
         formData.append('colorMode', document.getElementById('colorMode').value);
         formData.append('notes', document.getElementById('notes').value.trim());
@@ -97,12 +101,17 @@
         statusDiv.innerHTML = `<span style="color: #004a99;"><i class="fas fa-spinner fa-spin me-1"></i> جاري رفع الملف...</span>`;
 
         try {
-            const response = await fetch('/upload-student-file', {
-                method: 'POST',
-                body: formData
+            const response = await new Promise((resolve,reject)=>{
+                const xhr=new XMLHttpRequest();
+                xhr.open('POST','/upload-student-file');
+                xhr.upload.onprogress=e=>{if(e.lengthComputable){const p=Math.round(e.loaded/e.total*100);statusDiv.innerHTML=`<span style="color:#004a99">جاري الرفع: ${p}%</span>`;}};
+                xhr.onerror=()=>reject(new Error('انقطع الاتصال أثناء الرفع'));
+                xhr.timeout=10*60*1000;
+                xhr.ontimeout=()=>reject(new Error('انتهت مهلة الرفع بسبب بطء الإنترنت'));
+                xhr.onload=()=>{let data={};try{data=JSON.parse(xhr.responseText)}catch{}resolve({ok:xhr.status>=200&&xhr.status<300,status:xhr.status,data});};
+                xhr.send(formData);
             });
-
-            const result = await response.json();
+            const result=response.data;
             
             if (response.ok && result.success) {
                 statusDiv.innerHTML = `<span style="color: #27ae60;"><i class="fas fa-check-circle me-1"></i> تم الرفع بنجاح!</span>`;
@@ -111,10 +120,10 @@
                 document.getElementById('fileNameDisplay').innerHTML = `<i class="fas fa-file-export me-1"></i> انقر لاختيار ملف آخر`;
                 document.getElementById('fileNameDisplay').style.color = "#333";
             } else {
-                statusDiv.innerHTML = `<span style="color: #e74c3c;"><i class="fas fa-exclamation-circle me-1"></i> خطأ: ${result.message || 'فشل الرفع'}</span>`;
+                statusDiv.innerHTML = `<span style="color: #e74c3c;"><i class="fas fa-exclamation-circle me-1"></i> خطأ: ${result.message || result.error || `فشل الرفع (رمز ${response.status})`}</span>`;
             }
         } catch (error) {
-            statusDiv.innerHTML = `<span style="color: #e74c3c;"><i class="fas fa-wifi me-1"></i> فشل الاتصال بالسيرفر.</span>`;
+            statusDiv.innerHTML = `<span style="color: #e74c3c;"><i class="fas fa-wifi me-1"></i> ${error.message}. تحقق من الإنترنت ثم أعد المحاولة.</span>`;
         } finally {
             btn.disabled = false;
         }

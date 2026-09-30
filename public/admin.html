@@ -71,6 +71,38 @@
     <div class="container" id="adminContent" style="display: none;">
         <div class="row g-4">
 
+            <!-- إدارة الملازم: مخصصة للمدير حصراً -->
+            <div class="col-12">
+                <div class="card card-custom p-4 bg-white">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                        <h5 class="fw-bold text-danger mb-0">
+                            <i class="fa-solid fa-book me-2"></i>إدارة الملازم وحذفها
+                        </h5>
+                        <button class="btn btn-sm btn-outline-primary fw-bold" onclick="loadAdminMaterials()">
+                            <i class="fa-solid fa-rotate me-1"></i> تحديث القائمة
+                        </button>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <input id="materialSearch" class="form-control" placeholder="ابحث باسم الملزمة أو الأستاذ..." oninput="renderAdminMaterials()">
+                        </div>
+                        <div class="col-md-3">
+                            <select id="materialDeptFilter" class="form-select" onchange="renderAdminMaterials()"><option value="">كل الأقسام</option></select>
+                        </div>
+                        <div class="col-md-3">
+                            <select id="materialStageFilter" class="form-select" onchange="renderAdminMaterials()"><option value="">كل المراحل</option></select>
+                        </div>
+                    </div>
+                    <div class="alert alert-warning py-2 small"><i class="fa-solid fa-triangle-exclamation me-1"></i> الحذف نهائي ويزيل الملزمة من القسم ومن مساحة التخزين.</div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle text-center">
+                            <thead class="table-dark"><tr><th>الملزمة</th><th>الأستاذ</th><th>القسم</th><th>المرحلة</th><th>تاريخ الرفع</th><th>الإجراء</th></tr></thead>
+                            <tbody id="adminMaterialsTableBody"><tr><td colspan="6" class="text-muted">جاري تحميل الملازم...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <!-- قسم كشف تقارير دوام وبصمة الموظفين -->
             <div class="col-12">
                 <div class="card card-custom p-4 bg-white">
@@ -296,6 +328,7 @@
                     document.getElementById('adminContent').style.display = 'block';
                     loadTasks();
                     loadAttendanceReports();
+                    loadAdminMaterials();
                 } else {
                     alert("رمز PIN غير صحيح!");
                 }
@@ -471,6 +504,60 @@
 
         function loadPerformanceReport() {
             alert("جاري جلب تقرير الأداء والأوفرتايم الأسبوعي...");
+        }
+
+        let adminMaterials = [];
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+        }
+        async function loadAdminMaterials() {
+            const tbody = document.getElementById('adminMaterialsTableBody');
+            tbody.innerHTML = '<tr><td colspan="6" class="text-muted">جاري تحميل الملازم...</td></tr>';
+            try {
+                const res = await fetch('/api/admin/materials');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.error || 'تعذر تحميل الملازم');
+                adminMaterials = data.materials || [];
+                fillMaterialFilters();
+                renderAdminMaterials();
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-danger">${escapeHtml(e.message)}</td></tr>`;
+            }
+        }
+        function fillMaterialFilters() {
+            const dept = document.getElementById('materialDeptFilter');
+            const stage = document.getElementById('materialStageFilter');
+            const currentDept = dept.value, currentStage = stage.value;
+            const departments = [...new Map(adminMaterials.map(m => [m.department_code, m.department_name])).entries()];
+            const stages = [...new Map(adminMaterials.map(m => [m.stage_code, m.stage_name])).entries()];
+            dept.innerHTML = '<option value="">كل الأقسام</option>' + departments.map(([code,name]) => `<option value="${escapeHtml(code)}">${escapeHtml(name)}</option>`).join('');
+            stage.innerHTML = '<option value="">كل المراحل</option>' + stages.map(([code,name]) => `<option value="${escapeHtml(code)}">${escapeHtml(name)}</option>`).join('');
+            dept.value = currentDept; stage.value = currentStage;
+        }
+        function renderAdminMaterials() {
+            const tbody = document.getElementById('adminMaterialsTableBody');
+            const q = document.getElementById('materialSearch').value.trim().toLowerCase();
+            const dept = document.getElementById('materialDeptFilter').value;
+            const stage = document.getElementById('materialStageFilter').value;
+            const rows = adminMaterials.filter(m => (!dept || m.department_code === dept) && (!stage || m.stage_code === stage) && (!q || `${m.title} ${m.doctor_name}`.toLowerCase().includes(q)));
+            if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-muted">لا توجد ملازم مطابقة.</td></tr>'; return; }
+            tbody.innerHTML = rows.map(m => `<tr>
+                <td class="text-start fw-bold">${escapeHtml(m.title)}</td><td>${escapeHtml(m.doctor_name || '-')}</td>
+                <td>${escapeHtml(m.department_name)}</td><td>${escapeHtml(m.stage_name)}</td>
+                <td>${m.created_at ? new Date(m.created_at).toLocaleDateString('ar-IQ') : '-'}</td>
+                <td><button class="btn btn-sm btn-danger fw-bold" onclick="deleteMaterial(${Number(m.material_id)}, '${escapeHtml(m.title).replace(/'/g,'&#39;')}')"><i class="fa-solid fa-trash me-1"></i> حذف</button></td>
+            </tr>`).join('');
+        }
+        async function deleteMaterial(id, title) {
+            if (!confirm(`هل أنت متأكد من حذف الملزمة:\n${title}\n\nسيُحذف الملف نهائياً ولا يمكن التراجع.`)) return;
+            try {
+                const res = await fetch(`/api/materials/${id}`, {method:'DELETE'});
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.error || 'تعذر حذف الملزمة');
+                adminMaterials = adminMaterials.filter(m => Number(m.material_id) !== Number(id));
+                fillMaterialFilters(); renderAdminMaterials();
+                alert('تم حذف الملزمة وملفها بنجاح.');
+            } catch (e) { alert('فشل الحذف: ' + e.message); }
         }
 
         async function createDepartment(e) {
