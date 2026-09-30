@@ -90,10 +90,13 @@ async function removeStored(storagePath, url) {
   }
 }
 
-app.get('/api/health', async (_req,res) => {
-  if (!pool) return res.json({ success:true, database:false, mode:'setup-required' });
-  try { await pool.query('select 1'); res.json({success:true,database:true,storage:Boolean(SUPABASE_URL && SERVICE_KEY)}); }
-  catch(e){ res.status(503).json({success:false,database:false,error:e.message}); }
+app.get('/api/health', (_req, res) => {
+  res.json({
+    success: true,
+    service: true,
+    databaseConfigured: Boolean(DATABASE_URL),
+    storageConfigured: Boolean(SUPABASE_URL && SERVICE_KEY)
+  });
 });
 app.get('/api/get-qr-url', (req,res) => res.json({success:true,url:`${req.protocol}://${req.get('host')}/students.html`}));
 
