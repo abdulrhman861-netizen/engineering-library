@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: engineering-library
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: library-files
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_SETUP_PIN
+        sync: false
+      - key: MAX_UPLOAD_MB
+        value: 50

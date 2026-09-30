@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <!-- ربط الـ PWA والأيقونات -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#004a99">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="المكتبة الرقمية">
+    <link rel="apple-touch-icon" href="/assets/icon-192.png">
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إدارة الملازم - الجامعة العراقية</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px 0; box-sizing: border-box; }
+        .upload-card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 450px; position: relative; }
+        .home-link { position: absolute; top: 20px; left: 20px; color: #666; text-decoration: none; font-size: 1.2rem; }
+        .home-link:hover { color: #004a99; }
+        h2 { color: #004a99; margin-bottom: 20px; font-size: 1.5rem; text-align: center; }
+        label { display: block; margin-top: 10px; font-weight: bold; font-size: 0.9rem; color: #333; }
+        select, input { width: 100%; padding: 12px; margin: 6px 0 12px 0; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box; font-family: inherit; }
+        button { background: #004a99; color: white; border: none; padding: 15px; width: 100%; border-radius: 10px; cursor: pointer; font-weight: bold; margin-top: 15px; transition: 0.3s; font-size: 1rem; }
+        button:hover { background: #003366; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <div class="upload-card">
+        <a href="admin.html" class="home-link" title="العودة للوحة التحكم"><i class="fas fa-arrow-left"></i></a>
+        <h2>📂 إضافة ملازم جديدة</h2>
+        
+        <form id="handoutForm">
+            <input type="hidden" name="adminKey" id="adminKey">
+            
+            <label for="title">اسم الملزمة / المادة:</label>
+            <input type="text" name="title" id="title" placeholder="مثال: البرمجة الهيكلية C++" required>
+
+            <label for="doctorName">اسم الأستاذ / الدكتور:</label>
+            <input type="text" name="doctorName" id="doctorName" placeholder="مثال: د. أحمد علي" required>
+
+            <label for="department">اختر القسم:</label>
+            <select name="department" id="department" required>
+                <option value="computer" selected>هندسة الحاسوب</option>
+                <option value="networks">هندسة الشبكات والأمن السيبراني</option>
+                <option value="civil">الهندسة المدنية</option>
+                <option value="electric">هندسة الكهرباء</option>
+                <option value="architecture">الهندسة المعمارية</option>
+                <option value="ai">الذكاء الاصطناعي</option>
+                <option value="energy">هندسة الطاقة والطاقة المتجددة</option>
+            </select>
+            
+            <label for="stage">اختر المرحلة الدراسية:</label>
+            <select name="stage" id="stage" required>
+                <option value="1">المرحلة الأولى</option>
+                <option value="2">المرحلة الثانية</option>
+                <option value="3">المرحلة الثالثة</option>
+                <option value="4">المرحلة الرابعة</option>
+                <option value="masters">الماجستير</option>
+                <option value="phd">الدكتوراه</option>
+            </select>
+            
+            <label for="file">ملف الملزمة (PDF):</label>
+            <input type="file" name="file" id="file" accept=".pdf" required>
+            
+            <button type="submit" id="upBtn"><i class="fas fa-cloud-upload-alt me-1"></i> إضافة إلى المكتبة الرقمية</button>
+        </form>
+    </div>
+
+    <script>
+        // التحقق من جلسة المدير بدلاً من مفتاح ظاهر داخل الرابط
+        const token = sessionStorage.getItem('adminToken');
+        if (!token) { 
+            alert("غير مصرح لك بالدخول لهذه الصفحة!");
+            window.location.href = 'admin.html'; 
+        }
+        (async()=>{try{const [dr,sr]=await Promise.all([fetch('/api/departments'),fetch('/api/stages')]);if(dr.ok){const ds=await dr.json();department.innerHTML=ds.map(d=>`<option value="${d.code}">${d.name}</option>`).join('')}if(sr.ok){const ss=await sr.json();stage.innerHTML=ss.map(s=>`<option value="${s.code}">${s.name}</option>`).join('')}}catch{}})();
+
+        // 2. رفع الملزمة عبر السيرفر بالأسماء الصحيحة المتوافقة مع السيرفر والأقسام
+        document.getElementById('handoutForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('upBtn');
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i> جاري الرفع والمعالجة...`; 
+            btn.disabled = true;
+
+            const formData = new FormData(e.target);
+            
+            try {
+                const res = await fetch('/api/materials/upload', { 
+                    method: 'POST', 
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData 
+                });
+                
+                const result = await res.json();
+
+                if (res.ok && result.success) {
+                    alert('✅ تمت إضافة الملزمة بنجاح وقرينتها بالقسم المحدد!');
+                    e.target.reset();
+                } else { 
+                    alert('❌ فشل الرفع: ' + (result.message || result.error || 'حدث خطأ غير معروف')); 
+                }
+            } catch (err) { 
+                alert('❌ خطأ في الاتصال بالسيرفر! تأكد من تشغيل node server.js'); 
+            } finally { 
+                btn.innerHTML = `<i class="fas fa-cloud-upload-alt me-1"></i> إضافة إلى المكتبة الرقمية`; 
+                btn.disabled = false; 
+            }
+        };
+
+        // 3. تسجيل الـ Service Worker لتفعيل الـ PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('PWA Service Worker Registered!'))
+                    .catch(err => console.log('PWA Registration Failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>

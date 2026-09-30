@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#004a99">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="المكتبة الرقمية">
+    <link rel="apple-touch-icon" href="/assets/icon-192.png">
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>منصة الكادر - إعلان المناقشات الرقمي</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #f4f6f9; padding-bottom: 50px; }
+        .navbar-custom { background: linear-gradient(135deg, #004a99, #003366); color: white; }
+        .card-custom { border-radius: 12px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+
+        @font-face {
+            font-family: 'KhalidArtBold';
+            src: url('/fonts/Khalid Art bold.ttf') format('truetype');
+            font-weight: bold;
+            font-style: normal;
+        }
+
+        .poster-canvas-horizontal {
+            width: 297mm;
+            height: 210mm;
+            margin: 0 auto;
+            position: relative;
+            background-color: #fff;
+            background-size: 100% 100%;
+            background-repeat: no-repeat;
+            background-position: center;
+            box-sizing: border-box;
+            padding: 20mm 25mm;
+            box-shadow: 0 0 20px rgba(0,0,0,0.15);
+            font-family: 'KhalidArtBold', sans-serif !important;
+        }
+
+        .poster-canvas-vertical {
+            width: 210mm;
+            height: 297mm;
+            margin: 0 auto;
+            position: relative;
+            background-color: #fff;
+            background-size: 100% 100%;
+            background-repeat: no-repeat;
+            background-position: center;
+            box-sizing: border-box;
+            padding: 20mm 15mm;
+            box-shadow: 0 0 20px rgba(0,0,0,0.15);
+            font-family: 'KhalidArtBold', sans-serif !important;
+        }
+
+        .poster-canvas-horizontal *, .poster-canvas-vertical * {
+            font-family: 'KhalidArtBold', sans-serif !important;
+        }
+
+        .committee-table-container {
+            width: 100%;
+            direction: rtl;
+            margin-top: 5px;
+        }
+
+        .committee-table-header {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 5px;
+        }
+
+        .committee-table-header div {
+            background-color: #000;
+            color: #fff;
+            font-weight: bold;
+            font-size: 0.9rem;
+            padding: 5px 3px;
+            text-align: center;
+            border-radius: 5px;
+        }
+
+        .committee-row {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+
+        .committee-cell {
+            border: 2px solid #000;
+            border-radius: 5px;
+            background-color: #fff;
+            padding: 3px 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: #000;
+            min-height: 32px;
+        }
+
+        .col-name { flex: 3; }
+        .col-spec { flex: 2.5; }
+        .col-work { flex: 3; }
+        .col-role { flex: 1.2; }
+
+        .nav-tabs .nav-link { color: #004a99; font-weight: bold; font-size: 1.05rem; }
+        .nav-tabs .nav-link.active { background-color: #004a99; color: white; border-color: #004a99; }
+
+        @media print {
+            body * { visibility: hidden; }
+            #printablePoster, #printablePoster * { visibility: visible; }
+            #printablePoster {
+                position: absolute;
+                left: 0;
+                top: 0;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar navbar-custom shadow-sm mb-4">
+        <div class="container d-flex justify-content-between align-items-center">
+            <span class="navbar-brand text-white fw-bold"><i class="fa-solid fa-scroll me-2"></i>منصة الكادر والمناقشات الرقمية</span>
+            <div>
+                <span id="userGreeting" class="text-white me-3 fw-bold small"></span>
+                <button id="logoutBtn" class="btn btn-danger btn-sm fw-bold me-2" onclick="handleLogout()" style="display: none;"><i class="fa-solid fa-sign-out-alt me-1"></i> تسجيل الخروج</button>
+                <a href="index.html" class="btn btn-outline-light btn-sm fw-bold"><i class="fa-solid fa-home me-1"></i> الرئيسية</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mb-4">
+        
+        <!-- قسم تسجيل دخول الموظف بحسابه -->
+        <div id="loginSection" class="card card-custom p-4 mb-4 bg-white mx-auto shadow-lg" style="max-width: 420px; margin-top: 40px;">
+            <div class="text-center mb-3">
+                <i class="fa-solid fa-user-lock text-primary fa-3x mb-2"></i>
+                <h4 class="fw-bold text-primary">تسجيل دخول الموظف</h4>
+                <p class="text-muted small mb-0">يرجى كتابة البيانات المسجلة من المدير للدخول</p>
+            </div>
+            <form onsubmit="handleEmployeeLogin(event)">
+                <div class="mb-3 text-start">
+                    <label class="form-label fw-bold small">رقم الهاتف (اسم المستخدم):</label>
+                    <input type="text" id="loginPhone" class="form-control" placeholder="07xxxxxxxxx" required>
+                </div>
+                <div class="mb-3 text-start">
+                    <label class="form-label fw-bold small">كلمة المرور:</label>
+                    <input type="password" id="loginPassword" class="form-control" placeholder="******" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100 fw-bold py-2"><i class="fa-solid fa-right-to-bracket me-1"></i> تسجيل الدخول للحساب</button>
+            </form>
+        </div>
+
+        <!-- المنطقة المحمية الخاصة بالخدمات -->
+        <div id="staffDashboard" style="display: none;">
+            
+            <!-- تبويبات التنقل -->
+            <ul class="nav nav-tabs mb-4 justify-content-center" id="staffTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="attendance-tab" data-bs-toggle="tab" data-bs-target="#attendance-pane" type="button" role="tab"><i class="fa-solid fa-user-clock me-2"></i>البصمة والمهام اليومية</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="poster-tab" data-bs-toggle="tab" data-bs-target="#poster-pane" type="button" role="tab"><i class="fa-solid fa-scroll me-2"></i>إعداد إعلانات المناقشات</button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="staffTabsContent">
+                
+                <!-- التبويب الأول: البصمة والمهام -->
+                <div class="tab-pane fade show active" id="attendance-pane" role="tabpanel">
+                    <!-- قسم بصمة الدوام للكادر وتتبع الساعات -->
+                    <div class="card card-custom p-3 mb-4 bg-white border-primary">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div>
+                                <h5 class="fw-bold text-primary mb-0"><i class="fa-solid fa-user-clock me-2"></i>تسجيل حضور وانصراف الدوام</h5>
+                                <small class="text-muted" id="hoursTracker">إجمالي ساعات الدوام المسجلة اليوم: 0 ساعة</small>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button onclick="registerAttendance('دخول')" class="btn btn-success fw-bold"><i class="fa-solid fa-right-to-bracket me-1"></i> تسجيل دخول الدوام</button>
+                                <button onclick="registerAttendance('خروج')" class="btn btn-danger fw-bold"><i class="fa-solid fa-right-from-bracket me-1"></i> تسجيل خروج الدوام</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- قسم متابعة المهام الخاصة بالموظف -->
+                    <div class="card card-custom p-4 mb-4 bg-white">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="fw-bold text-dark mb-0"><i class="fa-solid fa-tasks me-2 text-warning"></i>قائمة المهام اليومية والواجبات</h5>
+                            <button class="btn btn-sm btn-outline-primary fw-bold" onclick="loadMyTasks()"><i class="fa-solid fa-rotate me-1"></i> تحديث المهام</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle text-center mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>ت</th>
+                                        <th>عنوان المهمة</th>
+                                        <th>الحالة</th>
+                                        <th>الإجراء</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="staffTasksTable">
+                                    <tr>
+                                        <td colspan="4" class="text-muted">جاري تحميل المهام...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- التبويب الثاني: إدخال وإصدار القطع -->
+                <div class="tab-pane fade" id="poster-pane" role="tabpanel">
+                    <div class="card card-custom p-4 bg-white">
+                        <h4 class="fw-bold text-primary mb-3"><i class="fa-solid fa-image me-2"></i>إدخال معلومات الطالب وتحديد الاتجاه والقالب</h4>
+                        
+                        <form onsubmit="handleDirectPosterGeneration(event)">
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-3">
+                                    <label class="form-label fw-bold">اختر نموذج القالب:</label>
+                                    <select class="form-select border-primary fw-bold" id="templateSelect" onchange="updatePosterLayout()">
+                                        <option value="temp1" selected>العلوم الإسلامية - أفقي</option>
+                                        <option value="temp2">الهندسة - عامودي</option>
+                                        <option value="custom">نموذج حر (رفع صورة)</option>
+                                    </select>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label fw-bold text-danger">اتجاه القطعة للطباعة:</label>
+                                    <select class="form-select border-danger fw-bold" id="orientationSelect" onchange="updatePosterLayout()">
+                                        <option value="horizontal" selected>أفقي (Landscape)</option>
+                                        <option value="vertical">عمودي (Portrait)</option>
+                                    </select>
+                                </div>
+
+                                <div class="col-md-3" id="customFileBox" style="display: none;">
+                                    <label class="form-label fw-bold">رفع صورة القالب الخاص:</label>
+                                    <input type="file" id="bgImageInput" class="form-control" accept="image/*" onchange="loadCustomBgImage(this)">
+                                </div>
+
+                                <div class="col-md-1.5">
+                                    <label class="form-label fw-bold">جنس الطالب:</label>
+                                    <select class="form-select" id="studentGender">
+                                        <option value="لطالب" selected>طالب</option>
+                                        <option value="لطالبة">طالبة</option>
+                                    </select>
+                                </div>
+
+                                <div class="col-md-1.5">
+                                    <label class="form-label fw-bold">نوع الشهادة:</label>
+                                    <select class="form-select" id="degreeType" onchange="generateCommitteeFields()">
+                                        <option value="DOCTORATE" selected>دكتوراه (6 مناقشين)</option>
+                                        <option value="MASTER">ماجستير (4 مناقشين)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">اسم الطالب كاملاً:</label>
+                                    <input type="text" class="form-control" id="studentName" value="عدنان إبراهيم محمد" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">القسم والكلية والجامعة:</label>
+                                    <input type="text" class="form-control" id="deptCollegeName" value="قسم الشريعة / كلية العلوم الإسلامية" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">التاريخ والتوقيت والقاعة:</label>
+                                    <input type="text" class="form-control" id="discussionTiming" value="يوم الاثنين الموافق 2026/08/15 - الساعة التاسعة صباحاً - قاعة الدكتور عبد الجليل الفهداوي" required>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">عنوان الرسالة / الأطروحة:</label>
+                                <textarea class="form-control" id="thesisTitle" rows="2" required>حاشية قنالي زاده على درر الحكام لعلي بن أمر الله الحنائي</textarea>
+                            </div>
+
+                            <h5 class="fw-bold text-secondary mt-4 mb-3">أعضاء لجنة المناقشة:</h5>
+                            <div id="committeeContainer" class="row g-3"></div>
+
+                            <div class="mt-4 text-end">
+                                <button type="submit" id="submitBtn" class="btn btn-success btn-lg fw-bold"><i class="fa-solid fa-print me-1"></i> إظهار النتيجة وطباعة / حفظ PDF</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- منطقة المعاينة والطباعة -->
+                    <div class="container text-center mt-4 mb-5">
+                        <h5 class="fw-bold text-dark mb-3">معاينة الإعلان النهائي للطباعة</h5>
+                        
+                        <div id="printablePoster" class="poster-canvas-horizontal" style="background-image: url('/assets/العلوم الاسلامية - افقي.jpg');">
+                            
+                            <div class="text-center" id="textBlock" style="margin-top: 30mm;">
+                                <p class="fw-bold fs-4 mb-1" id="outIntroText">ستجري بعون الله تعالى المناقشة العلنية لطالب الدكتوراه</p>
+                                <h1 class="fw-bold" id="outStudentName" style="color: #800000; font-size: 2.8rem; margin-bottom: 2px;">عدنان إبراهيم محمد</h1>
+                                <p class="fw-bold fs-5" id="outDeptCollege" style="color: #111;">قسم الشريعة والموسومة</p>
+
+                                <div class="my-2 px-3">
+                                    <h2 class="fw-bold" id="outThesisTitle" style="color: #900000; font-size: 1.8rem; line-height: 1.4;">"حاشية قنالي زاده على درر الحكام"</h2>
+                                </div>
+
+                                <p class="fw-bold fs-5 text-dark" id="outTiming" style="margin-bottom: 15px;">وذلك في الساعة التاسعة صباحاً - يوم الاثنين الموافق 2026/08/15 وعلى قاعة الفهداوي</p>
+                            </div>
+
+                            <div id="tableWrapper" style="position: absolute; bottom: 12mm; left: 32mm; right: 32mm;">
+                                <h6 class="fw-bold text-start mb-1" style="font-size: 0.95rem;">أعضاء لجنة المناقشة</h6>
+                                <div class="committee-table-container">
+                                    <div class="committee-table-header">
+                                        <div class="col-name">الاسم واللقب العلمي</div>
+                                        <div class="col-spec">التخصص العام والدقيق</div>
+                                        <div class="col-work">محل العمل</div>
+                                        <div class="col-role">المنصب</div>
+                                    </div>
+                                    <div id="outCommitteeTable"></div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = (url, options = {}) => {
+            const token = localStorage.getItem('employeeToken');
+            options.headers = new Headers(options.headers || {});
+            if (token) options.headers.set('Authorization', `Bearer ${token}`);
+            return originalFetch(url, options);
+        };
+        document.addEventListener('DOMContentLoaded', () => {
+            generateCommitteeFields();
+            updatePosterLayout();
+            checkUserSession();
+        });
+
+        // التحقق الحتمي من تسجيل الدخول
+        function checkUserSession() {
+            const empName = localStorage.getItem('employeeName');
+            const greeting = document.getElementById('userGreeting');
+            const loginSection = document.getElementById('loginSection');
+            const dashboard = document.getElementById('staffDashboard');
+            const logoutBtn = document.getElementById('logoutBtn');
+
+            if (empName && localStorage.getItem('employeeToken')) {
+                greeting.innerHTML = `<i class="fa-solid fa-user-circle me-1"></i> أهلاً، ${empName}`;
+                loginSection.style.display = 'none';
+                dashboard.style.display = 'block';
+                logoutBtn.style.display = 'inline-block';
+                loadMyTasks();
+            } else {
+                loginSection.style.display = 'block';
+                dashboard.style.display = 'none';
+                logoutBtn.style.display = 'none';
+                greeting.innerHTML = '';
+            }
+        }
+
+        // تسجيل دخول الموظف بحسابه
+        async function handleEmployeeLogin(e) {
+            e.preventDefault();
+            const phone = document.getElementById('loginPhone').value;
+            const password = document.getElementById('loginPassword').value;
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: phone, password })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    localStorage.setItem('employeeToken', data.token);
+                    localStorage.setItem('employeeName', data.name);
+                    alert(`أهلاً بك مجدداً ${data.name}! تم تسجيل الدخول بنجاح.`);
+                    checkUserSession();
+                } else {
+                    alert('خطأ: ' + (data.error || 'بيانات الدخول غير صحيحة'));
+                }
+            } catch (err) {
+                alert('حدث خطأ في الاتصال بالسيرفر أثناء تسجيل الدخول');
+            }
+        }
+
+        // تسجيل الخروج
+        function handleLogout() {
+            if (confirm('هل تريد تسجيل الخروج من الحساب؟')) {
+                localStorage.removeItem('employeeToken');
+                localStorage.removeItem('employeeName');
+                checkUserSession();
+            }
+        }
+
+        // جلب مهام الموظف
+        async function loadMyTasks() {
+            const tbody = document.getElementById('staffTasksTable');
+            try {
+                const res = await fetch('/api/tasks');
+                const tasks = await res.json();
+
+                if (!tasks || tasks.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="4" class="text-muted">لا توجد مهام مسندة حالياً.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = tasks.map((t, idx) => `
+                    <tr>
+                        <td>${idx + 1}</td>
+                        <td class="fw-bold text-start">${t.title}</td>
+                        <td>
+                            <span class="badge bg-${t.status === 'COMPLETED' ? 'success' : 'warning text-dark'}">
+                                ${t.status === 'COMPLETED' ? 'مكتملة' : 'قيد الانتظار'}
+                            </span>
+                        </td>
+                        <td>
+                            ${t.status !== 'COMPLETED' ? 
+                                `<button class="btn btn-sm btn-success fw-bold" onclick="completeTask(${t.task_id})"><i class="fa-solid fa-check me-1"></i> إكمال</button>` 
+                                : '<i class="fa-solid fa-check-double text-success"></i>'}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-danger">تعذر تحميل المهام.</td></tr>`;
+            }
+        }
+
+        // تعليم المهمة كمكتملة
+        async function completeTask(taskId) {
+            try {
+                const res = await fetch('/api/tasks/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ taskId, completedBy: 1 })
+                });
+                if (res.ok) {
+                    alert('تم تغيير حالة المهمة إلى مكتملة بنجاح!');
+                    loadMyTasks();
+                }
+            } catch (e) {
+                alert('فشل تحديث حالة المهمة.');
+            }
+        }
+
+        function updatePosterLayout() {
+            const template = document.getElementById('templateSelect').value;
+            const orientationSelect = document.getElementById('orientationSelect');
+            const poster = document.getElementById('printablePoster');
+            const customBox = document.getElementById('customFileBox');
+            const tableWrapper = document.getElementById('tableWrapper');
+            const textBlock = document.getElementById('textBlock');
+
+            if (template === 'custom') {
+                customBox.style.display = 'block';
+            } else {
+                customBox.style.display = 'none';
+            }
+
+            if (template === 'temp2') {
+                orientationSelect.value = 'vertical';
+                poster.className = 'poster-canvas-vertical';
+                poster.style.backgroundImage = "url('/assets/الهندسة - عامودي.jpg')";
+                tableWrapper.style.left = '12mm';
+                tableWrapper.style.right = '12mm';
+                tableWrapper.style.bottom = '18mm';
+                textBlock.style.marginTop = '60mm';
+            } else if (template === 'temp1') {
+                orientationSelect.value = 'horizontal';
+                poster.className = 'poster-canvas-horizontal';
+                poster.style.backgroundImage = "url('/assets/العلوم الاسلامية - افقي.jpg')";
+                tableWrapper.style.left = '32mm';
+                tableWrapper.style.right = '32mm';
+                tableWrapper.style.bottom = '12mm';
+                textBlock.style.marginTop = '30mm';
+            } else {
+                const orientation = orientationSelect.value;
+                poster.className = orientation === 'vertical' ? 'poster-canvas-vertical' : 'poster-canvas-horizontal';
+            }
+        }
+
+        function loadCustomBgImage(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('printablePoster').style.backgroundImage = `url('${e.target.result}')`;
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function generateCommitteeFields() {
+            const count = document.getElementById('degreeType').value === 'MASTER' ? 4 : 6;
+            const container = document.getElementById('committeeContainer');
+            let html = '';
+            for (let i = 1; i <= count; i++) {
+                let role = i === 1 ? 'رئيساً' : (i === count ? 'عضواً ومشرفاً' : 'عضواً');
+                html += `
+                    <div class="col-md-6">
+                        <div class="p-2 border rounded bg-light">
+                            <span class="badge bg-dark mb-1">${i}. ${role}</span>
+                            <div class="row g-1">
+                                <div class="col-4"><input type="text" class="form-control form-control-sm member-name" placeholder="الاسم" required></div>
+                                <div class="col-4"><input type="text" class="form-control form-control-sm member-spec" placeholder="التخصص" required></div>
+                                <div class="col-4"><input type="text" class="form-control form-control-sm member-work" placeholder="محل العمل" required></div>
+                            </div>
+                        </div>
+                    </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        // تسجيل بصمة الدوام للموظفين مباشرة
+        async function registerAttendance(type) {
+            let empName = localStorage.getItem('employeeName');
+            if (!empName) {
+                empName = prompt("أدخل اسم الموظف الثلاثي لتسجيل الدوام:");
+            }
+            if (!empName) return;
+
+            try {
+                const endpoint = type === 'دخول' ? '/api/attendance/check-in' : '/api/attendance/check-out';
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ employeeName: empName, type: type })
+                });
+                const data = await res.json();
+                
+                if (type === 'خروج' && data.hours) {
+                    document.getElementById('hoursTracker').innerText = `إجمالي ساعات الدوام المسجلة اليوم: ${data.hours} ساعة`;
+                }
+
+                alert(`تم تسجيل ${type} الموظف (${empName}) بنجاح!`);
+            } catch (err) {
+                alert("حدث خطأ أثناء الاتصال بالسيرفر.");
+            }
+        }
+
+        // إنشاء وطباعة الإعلان مباشرة دون أي فحص جغرافيا
+        async function handleDirectPosterGeneration(e) {
+            e.preventDefault();
+            generatePoster();
+        }
+
+        async function generatePoster() {
+            const gender = document.getElementById('studentGender').value;
+            const degreeType = document.getElementById('degreeType').value;
+            const degreeText = degreeType === 'MASTER' ? 'الماجستير' : 'الدكتوراه';
+            const studentName = document.getElementById('studentName').value;
+            const thesisTitle = document.getElementById('thesisTitle').value;
+            const timing = document.getElementById('discussionTiming').value;
+            const deptCollege = document.getElementById('deptCollegeName').value;
+            const orientation = document.getElementById('orientationSelect').value;
+
+            document.getElementById('outIntroText').innerText = `ستجري بعون الله تعالى المناقشة العلنية ${gender} ${degreeText}`;
+            document.getElementById('outStudentName').innerText = studentName;
+            document.getElementById('outDeptCollege').innerText = deptCollege + ' والموسومة';
+            document.getElementById('outThesisTitle').innerText = `"${thesisTitle}"`;
+            document.getElementById('outTiming').innerText = timing;
+
+            const names = document.querySelectorAll('.member-name');
+            const specs = document.querySelectorAll('.member-spec');
+            const works = document.querySelectorAll('.member-work');
+
+            let tableHtml = '';
+            let committeeArray = [];
+
+            names.forEach((n, idx) => {
+                let role = idx === 0 ? 'رئيساً' : (idx === names.length - 1 ? 'عضواً ومشرفاً' : 'عضواً');
+                tableHtml += `
+                    <div class="committee-row">
+                        <div class="committee-cell col-name">${n.value}</div>
+                        <div class="committee-cell col-spec">${specs[idx].value}</div>
+                        <div class="committee-cell col-work">${works[idx].value}</div>
+                        <div class="committee-cell col-role">${role}</div>
+                    </div>`;
+                
+                committeeArray.push({
+                    memberName: n.value,
+                    academicTitle: specs[idx].value,
+                    workplace: works[idx].value,
+                    role: role
+                });
+            });
+            document.getElementById('outCommitteeTable').innerHTML = tableHtml;
+
+            const style = document.createElement('style');
+            style.innerHTML = `@page { size: A4 ${orientation}; margin: 0; }`;
+            document.head.appendChild(style);
+
+            try {
+                await fetch('/api/discussions/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        studentName,
+                        gender: gender === 'لطالبة' ? 'FEMALE' : 'MALE',
+                        degreeType,
+                        thesisTitle,
+                        discussionDate: timing,
+                        locationHall: 'قاعة الفهداوي',
+                        committee: committeeArray
+                    })
+                });
+            } catch (err) {
+                console.log("تمت معالجة الحفظ.");
+            }
+
+            window.print();
+        }
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('PWA Service Worker Registered!'))
+                    .catch(err => console.log('PWA Registration Failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>

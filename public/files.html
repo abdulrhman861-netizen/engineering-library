@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <!-- ربط الـ PWA والأيقونات -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#004a99">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="المكتبة الرقمية">
+    <link rel="apple-touch-icon" href="/assets/icon-192.png">
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>قائمة الملازم - مكتبة الهندسة</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root { --primary-color: #004a99; --accent-color: #e74c3c; --bg-color: #f4f7f6; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-color); margin: 0; padding: 20px; text-align: center; }
+        
+        .header-area { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 20px; position: relative; }
+        .back-btn { position: absolute; right: 20px; top: 20px; background: #666; color: white; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; display: flex; align-items: center; gap: 8px; }
+        .back-btn:hover { background: #444; color: white; }
+        
+        .search-container { max-width: 500px; margin: 0 auto 25px; position: relative; }
+        .search-container input { width: 100%; padding: 12px 45px 12px 20px; border-radius: 30px; border: 2px solid #ddd; font-size: 16px; outline: none; transition: 0.3s; box-sizing: border-box; }
+        .search-container input:focus { border-color: var(--primary-color); box-shadow: 0 0 8px rgba(0,74,153,0.1); }
+        .search-container i { position: absolute; right: 18px; top: 15px; color: #888; }
+
+        .files-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; max-width: 1200px; margin: auto; }
+        .file-card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); border-right: 8px solid var(--primary-color); transition: 0.3s; display: flex; flex-direction: column; justify-content: space-between; }
+        .file-card:hover { transform: translateY(-5px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+        .file-card i.fa-file-pdf { font-size: 3rem; color: var(--accent-color); margin-bottom: 15px; display: block; }
+        .file-name { font-weight: bold; color: #333; margin-bottom: 5px; word-break: break-word; font-size: 1.1rem; }
+        .instructor-name { color: #666; font-size: 0.9rem; margin-bottom: 15px; }
+        
+        .card-actions { display: flex; gap: 10px; flex-direction: column; }
+        .btn-action { padding: 10px; border-radius: 25px; font-size: 0.95rem; cursor: pointer; border: none; font-weight: bold; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; }
+        .btn-view { background-color: var(--primary-color); color: white; }
+        .btn-view:hover { background-color: #003366; color: white; }
+        .btn-print { background-color: #27ae60; color: white; }
+        .btn-print:hover { background-color: #1e8449; }
+        
+        .empty-msg { grid-column: 1 / -1; color: #666; padding: 40px; background: white; border-radius: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="header-area">
+    <a href="javascript:history.back()" class="back-btn"><i class="fas fa-arrow-right"></i> رجوع</a>
+    <h1 id="page-title">قائمة الملازم</h1>
+</div>
+
+<div class="search-container">
+    <i class="fas fa-search"></i>
+    <input type="text" id="fileSearch" placeholder="ابحث عن اسم الملزمة أو المادة..." onkeyup="filterFiles()">
+</div>
+
+<div class="files-grid" id="files-list"></div>
+
+<script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const dept = urlParams.get('dept') || '1';
+    const stage = urlParams.get('stage') || '1';
+    const stageName = urlParams.get('stageName') || "المرحلة الدراسية";
+
+    document.getElementById('page-title').innerText = `ملازم ${stageName}`;
+
+    async function loadFiles() {
+        const listElement = document.getElementById('files-list');
+        listElement.innerHTML = "<p>جاري تحميل الملازم من السيرفر...</p>";
+
+        try {
+            // الاستعلام من API السيرفر
+            const response = await fetch(`/api/materials/department/${dept}?stage=${stage}`);
+            const files = await response.json();
+
+            listElement.innerHTML = ""; 
+
+            if (!files || files.length === 0) {
+                listElement.innerHTML = `
+                    <div class="empty-msg">
+                        <i class="fas fa-folder-open" style="font-size: 3rem; color: #ccc; margin-bottom: 10px;"></i>
+                        <p>لا توجد ملازم حالياً لهذه المرحلة.</p>
+                    </div>`;
+                return;
+            }
+
+            files.forEach(file => {
+                const card = document.createElement('div');
+                card.className = 'file-card';
+                card.innerHTML = `
+                    <div>
+                        <i class="fas fa-file-pdf"></i>
+                        <div class="file-name">${file.title || 'ملزمة دراسية'}</div>
+                        <div class="instructor-name">
+                            <i class="fas fa-chalkboard-teacher me-1"></i> ${file.doctor_name || 'أستاذ المادة'}
+                        </div>
+                    </div>
+                    <div class="card-actions">
+                        <a href="${file.file_path}" target="_blank" class="btn-action btn-view">
+                            <i class="fas fa-eye"></i> عرض وتحميل
+                        </a>
+                        <button onclick="requestPrint(${file.material_id})" class="btn-action btn-print">
+                            <i class="fas fa-print"></i> طلب طباعة في المكتبة
+                        </button>
+                    </div>
+                `;
+                listElement.appendChild(card);
+            });
+        } catch (error) {
+            listElement.innerHTML = `<div class="empty-msg" style="color: red;"><p>تعذر الاتصال بالسيرفر. تأكد من تشغيل الخادم node server.js</p></div>`;
+        }
+    }
+
+    async function requestPrint(materialId) {
+        try {
+            const res = await fetch('/api/materials/print', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ materialId })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('✅ ' + (data.message || 'تمت إرسال الطلب لطباعة الملزمة!'));
+            } else {
+                alert('❌ فشل إرسال طلب الطباعة');
+            }
+        } catch (e) {
+            alert('❌ خطأ في الاتصال بالسيرفر');
+        }
+    }
+
+    function filterFiles() {
+        let query = document.getElementById('fileSearch').value.toLowerCase();
+        query = query.replace(/[أإآ]/g, 'ا');
+
+        const cards = document.getElementsByClassName('file-card');
+        for (let card of cards) {
+            let fileName = card.querySelector('.file-name').innerText.toLowerCase().replace(/[أإآ]/g, 'ا');
+            let instructor = card.querySelector('.instructor-name').innerText.toLowerCase().replace(/[أإآ]/g, 'ا');
+            
+            card.style.display = (fileName.includes(query) || instructor.includes(query)) ? "" : "none";
+        }
+    }
+
+    window.onload = loadFiles;
+
+    // تسجيل الـ Service Worker لتفعيل الـ PWA
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then(reg => console.log('PWA Service Worker Registered!'))
+                .catch(err => console.log('PWA Registration Failed:', err));
+        });
+    }
+</script>
+
+</body>
+</html>

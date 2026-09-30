@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#004a99">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="المكتبة الرقمية">
+    <link rel="apple-touch-icon" href="/assets/icon-192.png">
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>رفع ملف للطباعة - مكتبة الهندسة</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root { --primary: #004a99; --secondary: #27ae60; --bg: #f4f7f6; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg); margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; box-sizing: border-box; }
+        .upload-card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
+        .upload-card i.fa-cloud-upload-alt { font-size: 4rem; color: var(--primary); margin-bottom: 20px; }
+        h2 { color: #333; margin-bottom: 10px; font-weight: bold; }
+        p { color: #666; font-size: 0.95rem; margin-bottom: 30px; }
+        input[type="file"] { display: none; }
+        .field { text-align:right; margin:12px 0; }
+        .field label { display:block; margin-bottom:6px; color:#333; font-weight:700; }
+        .field input, .field select, .field textarea { width:100%; box-sizing:border-box; padding:12px; border:1px solid #d8dee6; border-radius:10px; font:inherit; }
+        .custom-file-upload { border: 2px dashed var(--primary); display: block; padding: 25px 20px; width: 100%; box-sizing: border-box; border-radius: 12px; cursor: pointer; margin-bottom: 20px; transition: 0.3s; background: #fafafa; }
+        .custom-file-upload:hover { background: #eef5ff; border-color: #003366; }
+        .print-btn { background: var(--primary); color: white; border: none; padding: 15px 30px; border-radius: 30px; font-size: 1.1rem; font-weight: bold; cursor: pointer; width: 100%; transition: 0.3s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .print-btn:hover { background: #003366; }
+        .print-btn:disabled { background: #ccc; cursor: not-allowed; }
+        #status { margin-top: 20px; font-weight: bold; font-size: 0.95rem; }
+        .back-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 25px; color: #666; text-decoration: none; font-size: 0.9rem; font-weight: bold; }
+        .back-link:hover { color: var(--primary); }
+    </style>
+</head>
+<body>
+
+<div class="upload-card">
+    <i class="fas fa-cloud-upload-alt"></i>
+    <h2>ارفع ملفك للطباعة</h2>
+    <p>يمكنك رفع ملفات PDF، Word، أو صور (JPG/PNG)</p>
+
+    <div class="field"><label for="studentName">اسم الطالب</label><input id="studentName" placeholder="الاسم الثلاثي" maxlength="120"></div>
+    <div class="field"><label for="phone">رقم الهاتف</label><input id="phone" type="tel" placeholder="07xxxxxxxxx" maxlength="20"></div>
+    <div class="field"><label for="copies">عدد النسخ</label><input id="copies" type="number" value="1" min="1" max="100"></div>
+    <div class="field"><label for="colorMode">نوع الطباعة</label><select id="colorMode"><option value="BW">أبيض وأسود</option><option value="COLOR">ملون</option></select></div>
+    <div class="field"><label for="notes">ملاحظات</label><textarea id="notes" rows="2" placeholder="مثال: وجهين أو تجليد"></textarea></div>
+
+    <label for="studentFile" class="custom-file-upload">
+        <span id="fileNameDisplay"><i class="fas fa-file-export me-1"></i> انقر هنا لاختيار الملف من جهازك</span>
+    </label>
+    <input type="file" id="studentFile" accept=".pdf, .doc, .docx, image/*" onchange="updateFileName()">
+
+    <button onclick="uploadFileDirectly()" id="submitBtn" class="print-btn">
+        <i class="fas fa-paper-plane"></i> إرسال للمكتبة
+    </button>
+    
+    <div id="status"></div>
+    
+    <a href="index.html" class="back-link"><i class="fas fa-arrow-right"></i> العودة للرئيسية</a>
+</div>
+
+<script>
+    function updateFileName() {
+        const input = document.getElementById('studentFile');
+        const display = document.getElementById('fileNameDisplay');
+        if (input.files.length > 0) {
+            display.innerHTML = "📁 <strong>" + input.files[0].name + "</strong>";
+            display.style.color = "#27ae60";
+        }
+    }
+
+    // رفع الملف مباشرة بدون أي فحص للموقع الجغرافي
+    async function uploadFileDirectly() {
+        const fileInput = document.getElementById('studentFile');
+        const statusDiv = document.getElementById('status');
+        const btn = document.getElementById('submitBtn');
+
+        if (fileInput.files.length === 0) {
+            alert("يرجى اختيار ملف أولاً");
+            return;
+        }
+
+        btn.disabled = true;
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('studentName', document.getElementById('studentName').value.trim());
+        formData.append('phone', document.getElementById('phone').value.trim());
+        formData.append('copies', document.getElementById('copies').value);
+        formData.append('colorMode', document.getElementById('colorMode').value);
+        formData.append('notes', document.getElementById('notes').value.trim());
+
+        statusDiv.innerHTML = `<span style="color: #004a99;"><i class="fas fa-spinner fa-spin me-1"></i> جاري رفع الملف...</span>`;
+
+        try {
+            const response = await fetch('/upload-student-file', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            
+            if (response.ok && result.success) {
+                statusDiv.innerHTML = `<span style="color: #27ae60;"><i class="fas fa-check-circle me-1"></i> تم الرفع بنجاح!</span>`;
+                alert("تم رفع الملف بنجاح! توجه لمركز المكتبة واستلم مطبوعاتك.");
+                fileInput.value = ""; 
+                document.getElementById('fileNameDisplay').innerHTML = `<i class="fas fa-file-export me-1"></i> انقر لاختيار ملف آخر`;
+                document.getElementById('fileNameDisplay').style.color = "#333";
+            } else {
+                statusDiv.innerHTML = `<span style="color: #e74c3c;"><i class="fas fa-exclamation-circle me-1"></i> خطأ: ${result.message || 'فشل الرفع'}</span>`;
+            }
+        } catch (error) {
+            statusDiv.innerHTML = `<span style="color: #e74c3c;"><i class="fas fa-wifi me-1"></i> فشل الاتصال بالسيرفر.</span>`;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js').catch(err => console.log(err));
+        });
+    }
+</script>
+</body>
+</html>
