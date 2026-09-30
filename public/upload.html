@@ -44,12 +44,13 @@
     <div class="field"><label for="phone">رقم الهاتف</label><input id="phone" type="tel" placeholder="07xxxxxxxxx" maxlength="20"></div>
     <div class="field"><label for="copies">عدد النسخ</label><input id="copies" type="number" value="1" min="1" max="100"></div>
     <div class="field"><label for="colorMode">نوع الطباعة</label><select id="colorMode"><option value="BW">أبيض وأسود</option><option value="COLOR">ملون</option></select></div>
+    <div class="field"><label for="printType">نوع الطلب</label><select id="printType" onchange="updatePrintType()"><option value="DOCUMENT">ملفات وصور عادية</option><option value="ID_CARD">طباعة هوية (الوجه والظهر جنباً إلى جنب)</option></select></div>
     <div class="field"><label for="notes">ملاحظات</label><textarea id="notes" rows="2" placeholder="مثال: وجهين أو تجليد"></textarea></div>
 
     <label for="studentFile" class="custom-file-upload">
         <span id="fileNameDisplay"><i class="fas fa-file-export me-1"></i> انقر هنا لاختيار الملف من جهازك</span>
     </label>
-    <input type="file" id="studentFile" accept=".pdf, .doc, .docx, image/*" onchange="updateFileName()">
+    <input type="file" id="studentFile" multiple accept=".pdf, .doc, .docx, image/*" onchange="updateFileName()">
 
     <button onclick="uploadFileDirectly()" id="submitBtn" class="print-btn">
         <i class="fas fa-paper-plane"></i> إرسال للمكتبة
@@ -65,7 +66,7 @@
         const input = document.getElementById('studentFile');
         const display = document.getElementById('fileNameDisplay');
         if (input.files.length > 0) {
-            display.innerHTML = "📁 <strong>" + input.files[0].name + "</strong>";
+            display.innerHTML = input.files.length===1 ? "📁 <strong>" + input.files[0].name + "</strong>" : `📁 <strong>تم اختيار ${input.files.length} ملفات</strong>`;
             display.style.color = "#27ae60";
         }
     }
@@ -82,13 +83,16 @@
         }
 
         btn.disabled = true;
+        const printType=document.getElementById('printType').value;
+        if(printType==='ID_CARD'&&fileInput.files.length!==2){alert('اختر صورتين فقط: صورة وجه الهوية ثم صورة ظهر الهوية');btn.disabled=false;return;}
         const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
+        for(const file of fileInput.files)formData.append('files',file);
         formData.append('studentName', document.getElementById('studentName').value.trim());
         formData.append('phone', document.getElementById('phone').value.trim());
         formData.append('copies', document.getElementById('copies').value);
         formData.append('colorMode', document.getElementById('colorMode').value);
         formData.append('notes', document.getElementById('notes').value.trim());
+        formData.append('printType', printType);
 
         statusDiv.innerHTML = `<span style="color: #004a99;"><i class="fas fa-spinner fa-spin me-1"></i> جاري رفع الملف...</span>`;
 
@@ -114,6 +118,14 @@
         } finally {
             btn.disabled = false;
         }
+    }
+
+    function updatePrintType(){
+        const identity=document.getElementById('printType').value==='ID_CARD';
+        const input=document.getElementById('studentFile');
+        input.accept=identity?'image/*':'.pdf, .doc, .docx, image/*';
+        input.value='';
+        document.getElementById('fileNameDisplay').innerHTML=identity?'🪪 اختر صورتين بالترتيب: الوجه ثم الظهر':'<i class="fas fa-file-export me-1"></i> انقر هنا لاختيار ملف أو عدة ملفات';
     }
 
     if ('serviceWorker' in navigator) {

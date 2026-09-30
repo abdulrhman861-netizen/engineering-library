@@ -2,6 +2,9 @@
 alter table if exists student_print_files add column if not exists student_name text;
 alter table if exists student_print_files add column if not exists phone text;
 alter table if exists student_print_files add column if not exists notes text;
+alter table if exists student_print_files add column if not exists second_file_path text;
+alter table if exists student_print_files add column if not exists second_storage_path text;
+alter table if exists student_print_files add column if not exists print_type text not null default 'DOCUMENT';
 
 update storage.buckets
 set public = true,

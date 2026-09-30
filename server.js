@@ -90,13 +90,10 @@ async function removeStored(storagePath, url) {
   }
 }
 
-app.get('/api/health', (_req, res) => {
-  res.json({
-    success: true,
-    service: true,
-    databaseConfigured: Boolean(DATABASE_URL),
-    storageConfigured: Boolean(SUPABASE_URL && SERVICE_KEY)
-  });
+app.get('/api/health', async (_req,res) => {
+  if (!pool) return res.json({ success:true, database:false, mode:'setup-required' });
+  try { await pool.query('select 1'); res.json({success:true,database:true,storage:Boolean(SUPABASE_URL && SERVICE_KEY)}); }
+  catch(e){ res.status(503).json({success:false,database:false,error:e.message}); }
 });
 app.get('/api/get-qr-url', (req,res) => res.json({success:true,url:`${req.protocol}://${req.get('host')}/students.html`}));
 
@@ -142,54 +139,50 @@ app.post('/api/materials/upload',auth,upload.single('file'),async(req,res)=>{
   try { const r=await pool.query('insert into study_materials(department_code,stage_code,subject_name,title,doctor_name,file_path,storage_path,uploaded_by) values($1,$2,$3,$4,$5,$6,$7,$8) returning *',[department,stage,title||req.file.originalname,title||req.file.originalname,doctorName||'',stored.url,stored.storagePath,req.user.userId]); res.json({success:true,message:'تم رفع الملزمة بنجاح',material:r.rows[0]}); }
   catch(e){ await removeStored(stored.storagePath,stored.url); throw e; }
 });
-app.get('/api/materials/department/:deptId',async(req,res)=>{ if(!configured(res))return; const values=[req.params.deptId]; let sql='select * from study_materials where department_code=$1'; if(req.query.stage){values.push(req.query.stage);sql+=' and stage_code=$2';} sql+=' order by created_at desc'; const r=await pool.query(sql,values); res.json(r.rows); });
+app.get('/api/materials/department/:deptId',async(req,res)=>{ if(!configured(res))return; const values=[req.params.deptId]; let sql='select material_id,department_code,stage_code,subject_name,title,doctor_name,created_at from study_materials where department_code=$1'; if(req.query.stage){values.push(req.query.stage);sql+=' and stage_code=$2';} sql+=' order by created_at desc'; const r=await pool.query(sql,values); res.json(r.rows); });
 app.delete('/api/materials/:id',auth,async(req,res)=>{ const r=await pool.query('delete from study_materials where material_id=$1 returning storage_path,file_path',[req.params.id]); if(!r.rowCount)return res.status(404).json({success:false,error:'الملزمة غير موجودة'}); await removeStored(r.rows[0].storage_path,r.rows[0].file_path); res.json({success:true}); });
 app.post('/api/materials/print',async(req,res)=>{
   if(!configured(res))return;
-
   const materialId=Number(req.body.materialId);
-
-  if(!Number.isInteger(materialId)||materialId<1){
-    return res.status(400).json({
-      success:false,
-      error:'رقم الملزمة غير صحيح'
-    });
-  }
-
-  const material=await pool.query(
-    'select title,file_path from study_materials where material_id=$1',
-    [materialId]
-  );
-
-  if(!material.rowCount){
-    return res.status(404).json({
-      success:false,
-      error:'الملزمة غير موجودة'
-    });
-  }
-
+  if(!Number.isInteger(materialId)||materialId<1)return res.status(400).json({success:false,error:'رقم الملزمة غير صحيح'});
+  const material=await pool.query('select title,file_path from study_materials where material_id=$1',[materialId]);
+  if(!material.rowCount)return res.status(404).json({success:false,error:'الملزمة غير موجودة'});
   const item=material.rows[0];
-
   const order=await pool.query(
     "insert into student_print_files(original_name,file_path,storage_path,copies,color_mode,student_name,phone,notes) values($1,$2,null,1,'BW','','','طلب طباعة ملزمة من المكتبة الرقمية') returning file_id",
     [item.title,item.file_path]
   );
+  res.json({success:true,message:'تم إرسال طلب الطباعة إلى موظفي المكتبة',orderId:order.rows[0].file_id});
+});
 
-  res.json({
-    success:true,
-    message:'تم إرسال طلب الطباعة إلى موظفي المكتبة',
-    orderId:order.rows[0].file_id
-  });
+app.post('/upload-student-file',upload.array('files',20),async(req,res)=>{
+  if(!configured(res))return;
+  const files=req.files||[];
+  if(!files.length)return res.status(400).json({success:false,message:'يرجى اختيار ملف واحد على الأقل'});
+  const printType=req.body.printType==='ID_CARD'?'ID_CARD':'DOCUMENT';
+  if(printType==='ID_CARD'&&(files.length!==2||files.some(f=>!f.mimetype.startsWith('image/'))))return res.status(400).json({success:false,message:'طباعة الهوية تحتاج صورتين فقط: الوجه والظهر'});
+  const common=[Math.max(1,Number(req.body.copies||1)),req.body.colorMode==='COLOR'?'COLOR':'BW',String(req.body.studentName||'').trim(),String(req.body.phone||'').trim(),String(req.body.notes||'').trim()];
+  const created=[];
+  if(printType==='ID_CARD'){
+    const front=await storeFile(files[0],'print-orders');
+    const back=await storeFile(files[1],'print-orders');
+    try{
+      const r=await pool.query("insert into student_print_files(original_name,file_path,storage_path,second_file_path,second_storage_path,print_type,copies,color_mode,student_name,phone,notes) values($1,$2,$3,$4,$5,'ID_CARD',$6,$7,$8,$9,$10) returning file_id",['هوية - الوجه والظهر',front.url,front.storagePath,back.url,back.storagePath,...common]);
+      created.push(r.rows[0].file_id);
+    }catch(e){await removeStored(front.storagePath,front.url);await removeStored(back.storagePath,back.url);throw e;}
+  }else{
+    for(const file of files){
+      const stored=await storeFile(file,'print-orders');
+      try{const r=await pool.query("insert into student_print_files(original_name,file_path,storage_path,print_type,copies,color_mode,student_name,phone,notes) values($1,$2,$3,'DOCUMENT',$4,$5,$6,$7,$8) returning file_id",[file.originalname,stored.url,stored.storagePath,...common]);created.push(r.rows[0].file_id);}
+      catch(e){await removeStored(stored.storagePath,stored.url);throw e;}
+    }
+  }
+  res.json({success:true,message:`تم إرسال ${created.length} طلب للطباعة`,orderIds:created});
 });
-app.post('/upload-student-file',upload.single('file'),async(req,res)=>{
-  if(!configured(res)||!req.file)return;
-  const stored=await storeFile(req.file,'print-orders');
-  const r=await pool.query('insert into student_print_files(original_name,file_path,storage_path,copies,color_mode,student_name,phone,notes) values($1,$2,$3,$4,$5,$6,$7,$8) returning file_id',[req.file.originalname,stored.url,stored.storagePath,Math.max(1,Number(req.body.copies||1)),req.body.colorMode==='COLOR'?'COLOR':'BW',String(req.body.studentName||'').trim(),String(req.body.phone||'').trim(),String(req.body.notes||'').trim()]);
-  res.json({success:true,message:'تم إرسال الملف إلى المكتبة',orderId:r.rows[0].file_id});
-});
-app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query("select file_id as id,original_name as \"originalName\",file_path as url,copies,color_mode,status,student_name,phone,notes,created_at as time from student_print_files where status<>'CANCELLED' order by created_at desc limit 200"); res.json(r.rows); });
+app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query("select file_id as id,original_name as \"originalName\",file_path as url,second_file_path as \"secondUrl\",print_type as \"printType\",copies,color_mode,status,student_name,phone,notes,created_at as time from student_print_files where status<>'CANCELLED' order by created_at desc limit 200"); res.json(r.rows); });
+app.get('/api/student-files/:id',auth,async(req,res)=>{const r=await pool.query('select file_id as id,original_name as "originalName",file_path as url,second_file_path as "secondUrl",print_type as "printType",copies,color_mode,student_name,phone,notes from student_print_files where file_id=$1',[req.params.id]);if(!r.rowCount)return res.status(404).json({success:false,error:'الطلب غير موجود'});res.json(r.rows[0]);});
 app.patch('/api/student-files/:id/status',auth,async(req,res)=>{ const status=['QUEUED','PRINTING','COMPLETED','CANCELLED'].includes(req.body.status)?req.body.status:'QUEUED'; await pool.query("update student_print_files set status=$1,completed_by=case when $1='COMPLETED' then $2 else completed_by end,completed_at=case when $1='COMPLETED' then now() else completed_at end where file_id=$3",[status,req.user.userId,req.params.id]); res.json({success:true}); });
-app.delete('/api/student-files/:id',auth,async(req,res)=>{ const r=await pool.query('delete from student_print_files where file_id=$1 returning storage_path,file_path',[req.params.id]); if(r.rowCount)await removeStored(r.rows[0].storage_path,r.rows[0].file_path); res.json({success:true}); });
+app.delete('/api/student-files/:id',auth,async(req,res)=>{ const r=await pool.query('delete from student_print_files where file_id=$1 returning storage_path,file_path,second_storage_path,second_file_path',[req.params.id]); if(r.rowCount){await removeStored(r.rows[0].storage_path,r.rows[0].file_path);await removeStored(r.rows[0].second_storage_path,r.rows[0].second_file_path);} res.json({success:true}); });
 
 app.get('/api/tasks',auth,async(_req,res)=>{ const r=await pool.query("select t.*,coalesce(u.full_name,'كادر المكتبة') assigned_to_name,cu.full_name completed_by_name from tasks t left join users u on u.user_id=t.assigned_to left join users cu on cu.user_id=t.completed_by order by t.created_at desc"); res.json(r.rows); });
 app.post('/api/tasks/create',auth,admin,async(req,res)=>{ const {taskType,title,description,assignedTo,expectedCompletionAt}=req.body; let userId=null; if(assignedTo){const u=await pool.query('select user_id from users where username=$1 or full_name=$1 limit 1',[assignedTo]);userId=u.rows[0]?.user_id||null;} const r=await pool.query('insert into tasks(task_type,title,description,assigned_to,expected_completion_at) values($1,$2,$3,$4,$5) returning *',[taskType||'عام',title,description||'',userId,expectedCompletionAt||null]); res.json({success:true,task:r.rows[0]}); });
