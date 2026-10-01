@@ -30,7 +30,7 @@
         .file-card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); border-right: 8px solid var(--primary-color); transition: 0.3s; display: flex; flex-direction: column; justify-content: space-between; }
         .file-card:hover { transform: translateY(-5px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
         .file-card i.fa-file-pdf { font-size: 3rem; color: var(--accent-color); margin-bottom: 15px; display: block; }
-        .preview{width:100%;height:170px;object-fit:contain;background:#f3f5f7;border-radius:10px;margin-bottom:12px}.number{display:inline-block;background:#004a99;color:#fff;border-radius:15px;padding:4px 10px;margin-bottom:8px}.date{font-size:.8rem;color:#7a8491;margin-bottom:9px}
+        .preview{width:100%;height:220px;object-fit:contain;background:#eef1f4;border-radius:10px;margin-bottom:12px;border:1px solid #dfe5eb}.pdf-preview{display:block;width:100%;height:auto;max-height:220px;object-fit:contain;background:#eef1f4;border-radius:10px;margin-bottom:12px;border:1px solid #dfe5eb}.preview-fallback{height:220px;display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;background:#f3f5f7;border-radius:10px;margin-bottom:12px}.preview-fallback i{font-size:4rem}.number{display:inline-block;background:#004a99;color:#fff;border-radius:15px;padding:4px 10px;margin-bottom:8px}.date{font-size:.8rem;color:#7a8491;margin-bottom:9px}
         .file-name { font-weight: bold; color: #333; margin-bottom: 5px; word-break: break-word; font-size: 1.1rem; }
         .instructor-name { color: #666; font-size: 0.9rem; margin-bottom: 15px; }
         
@@ -56,6 +56,7 @@
 
 <div class="files-grid" id="files-list"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
     const urlParams = new URLSearchParams(window.location.search);
     const dept = urlParams.get('dept') || '1';
@@ -87,10 +88,13 @@
             files.forEach(file => {
                 const card = document.createElement('div');
                 card.className = 'file-card';
-                const isImage=String(file.mime_type||'').startsWith('image/');
+                const type=String(file.mime_type||'').toLowerCase(),path=String(file.file_path||'');
+                const isImage=type.startsWith('image/')||/\.(jpe?g|png|webp|heic|heif)(\?|$)/i.test(path);
+                const isPdf=type.includes('pdf')||/\.pdf(\?|$)/i.test(path);
+                const isWord=type.includes('word')||/\.docx?(\?|$)/i.test(path);
                 card.innerHTML = `
                     <div>
-                        ${isImage?`<img class="preview" src="${file.file_path}" alt="معاينة الصفحة الأولى">`:`<i class="fas ${String(file.mime_type||'').includes('word')?'fa-file-word':'fa-file-pdf'}"></i>`}
+                        ${isImage?`<img class="preview" src="${file.file_path}" alt="معاينة الملزمة" draggable="false">`:isPdf?`<canvas class="pdf-preview" data-pdf-url="${encodeURI(file.file_path)}" aria-label="معاينة الصفحة الأولى"></canvas>`:`<div class="preview-fallback"><i class="fas ${isWord?'fa-file-word':'fa-file'}" style="color:${isWord?'#2474c6':'#777'}"></i></div>`}
                         <span class="number">رقم ${file.material_number||file.material_id}</span>
                         <div class="file-name">${file.title || 'ملزمة دراسية'}</div>
                         <div class="instructor-name">
@@ -103,10 +107,33 @@
                         </button>
                     </div>
                 `;
+                card.addEventListener('contextmenu',e=>e.preventDefault());
                 listElement.appendChild(card);
             });
+            await renderPdfPreviews();
         } catch (error) {
             listElement.innerHTML = `<div class="empty-msg" style="color: red;"><p>تعذر الاتصال بالسيرفر. تأكد من تشغيل الخادم node server.js</p></div>`;
+        }
+    }
+
+    async function renderPdfPreviews() {
+        if (!window.pdfjsLib) return;
+        pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        for (const canvas of document.querySelectorAll('canvas[data-pdf-url]')) {
+            try {
+                const pdf=await pdfjsLib.getDocument({url:canvas.dataset.pdfUrl}).promise;
+                const page=await pdf.getPage(1);
+                const base=page.getViewport({scale:1});
+                const targetWidth=Math.min(360,canvas.parentElement.clientWidth||300);
+                const viewport=page.getViewport({scale:targetWidth/base.width});
+                const ratio=Math.min(window.devicePixelRatio||1,2);
+                canvas.width=Math.floor(viewport.width*ratio);canvas.height=Math.floor(viewport.height*ratio);
+                canvas.style.aspectRatio=`${viewport.width}/${viewport.height}`;
+                await page.render({canvasContext:canvas.getContext('2d'),viewport,transform:ratio===1?null:[ratio,0,0,ratio,0,0]}).promise;
+                pdf.destroy();
+            } catch (error) {
+                const fallback=document.createElement('div');fallback.className='preview-fallback';fallback.innerHTML='<i class="fas fa-file-pdf" style="color:#e74c3c"></i><small style="display:block">تعذرت المعاينة</small>';canvas.replaceWith(fallback);
+            }
         }
     }
 
