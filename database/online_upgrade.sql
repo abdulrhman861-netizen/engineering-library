@@ -121,3 +121,8 @@ alter table if exists tasks add column if not exists archived_at timestamptz;
 create index if not exists chat_conversations_archived_idx on chat_conversations(archived_at,status);
 create index if not exists student_print_files_archived_idx on student_print_files(archived_at,status);
 create index if not exists tasks_archived_idx on tasks(archived_at,status);
+
+-- الحضور والرواتب v4.7
+alter table if exists users add column if not exists hourly_rate numeric(14,2) not null default 0;
+alter table if exists users add column if not exists overtime_hourly_rate numeric(14,2) not null default 0;
+create index if not exists attendance_user_open_idx on attendance(user_id,check_out);

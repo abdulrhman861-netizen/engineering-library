@@ -135,7 +135,6 @@
                 <a href="tasks-v2.html" class="btn btn-info btn-sm fw-bold me-2"><i class="fa-solid fa-list-check me-1"></i> المهام</a>
                 <a href="staff-chat.html" class="btn btn-light btn-sm fw-bold me-2"><i class="fa-solid fa-comments me-1"></i> المحادثات</a>
                 <a href="admin.html" class="btn btn-danger btn-sm fw-bold me-2"><i class="fa-solid fa-user-shield me-1"></i> دخول المدير</a>
-                <a href="admin-system.html" class="btn btn-dark btn-sm fw-bold me-2"><i class="fa-solid fa-gears me-1"></i> إدارة النظام العام</a>
                 <button id="logoutBtn" class="btn btn-danger btn-sm fw-bold me-2" onclick="handleLogout()" style="display: none;"><i class="fa-solid fa-sign-out-alt me-1"></i> تسجيل الخروج</button>
                 <a href="index.html" class="btn btn-outline-light btn-sm fw-bold"><i class="fa-solid fa-home me-1"></i> الرئيسية</a>
             </div>
@@ -391,7 +390,8 @@
                 if (data.success) {
                     localStorage.setItem('employeeToken', data.token);
                     localStorage.setItem('employeeName', data.name);
-                    alert(`أهلاً بك مجدداً ${data.name}! تم تسجيل الدخول بنجاح.`);
+                    localStorage.setItem('employeeRole', data.role);
+                    alert(`أهلاً بك ${data.name}! تم تسجيل دخولك وبدء احتساب ساعات العمل.`);
                     checkUserSession();
                 } else {
                     alert('خطأ: ' + (data.error || 'بيانات الدخول غير صحيحة'));
@@ -402,10 +402,13 @@
         }
 
         // تسجيل الخروج
-        function handleLogout() {
+        async function handleLogout() {
             if (confirm('هل تريد تسجيل الخروج من الحساب؟')) {
+                try{await fetch('/api/auth/logout',{method:'POST'});}catch{}
                 localStorage.removeItem('employeeToken');
                 localStorage.removeItem('employeeName');
+                localStorage.removeItem('employeeRole');
+                alert('تم تسجيل الخروج وإيقاف احتساب ساعات العمل.');
                 checkUserSession();
             }
         }
