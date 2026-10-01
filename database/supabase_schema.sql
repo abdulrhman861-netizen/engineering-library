@@ -95,6 +95,7 @@ alter table tasks add column if not exists claimed_at timestamptz;
 alter table tasks add column if not exists attachment_name text;
 alter table tasks add column if not exists attachment_path text;
 alter table tasks add column if not exists attachment_storage_path text;
+alter table tasks add column if not exists archived_at timestamptz;
 create index if not exists tasks_status_created_idx on tasks(status,created_at);
 create index if not exists tasks_customer_phone_idx on tasks(customer_phone);
 
@@ -187,6 +188,11 @@ create table if not exists chat_messages (
   sender_user_id bigint references users(user_id) on delete set null, message_text text,
   attachment_name text, attachment_path text, attachment_storage_path text, created_at timestamptz not null default now()
 );
+alter table chat_conversations add column if not exists archived_at timestamptz;
+alter table student_print_files add column if not exists archived_at timestamptz;
+create index if not exists chat_conversations_archived_idx on chat_conversations(archived_at,status);
+create index if not exists student_print_files_archived_idx on student_print_files(archived_at,status);
+create index if not exists tasks_archived_idx on tasks(archived_at,status);
 
 alter table users enable row level security;
 alter table study_materials enable row level security;

@@ -113,3 +113,11 @@ alter table pos_daily_closings enable row level security;
 alter table notifications enable row level security;
 alter table chat_conversations enable row level security;
 alter table chat_messages enable row level security;
+
+-- الأرشفة التشغيلية v4.6: تصفير آمن دون حذف السجلات المالية أو الملفات فعلياً
+alter table if exists chat_conversations add column if not exists archived_at timestamptz;
+alter table if exists student_print_files add column if not exists archived_at timestamptz;
+alter table if exists tasks add column if not exists archived_at timestamptz;
+create index if not exists chat_conversations_archived_idx on chat_conversations(archived_at,status);
+create index if not exists student_print_files_archived_idx on student_print_files(archived_at,status);
+create index if not exists tasks_archived_idx on tasks(archived_at,status);
