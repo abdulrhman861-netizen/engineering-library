@@ -94,7 +94,7 @@
                 const isWord=type.includes('word')||/\.docx?(\?|$)/i.test(path);
                 card.innerHTML = `
                     <div>
-                        ${isImage?`<img class="preview" src="${file.file_path}" alt="معاينة الملزمة" draggable="false">`:isPdf?`<canvas class="pdf-preview" data-pdf-url="${encodeURI(file.file_path)}" aria-label="معاينة الصفحة الأولى"></canvas>`:`<div class="preview-fallback"><i class="fas ${isWord?'fa-file-word':'fa-file'}" style="color:${isWord?'#2474c6':'#777'}"></i></div>`}
+                        ${isImage?`<img class="preview" src="/api/materials/${file.material_id}/preview-content" alt="معاينة الملزمة" draggable="false">`:isPdf?`<canvas class="pdf-preview" data-pdf-url="/api/materials/${file.material_id}/preview-content" aria-label="معاينة الصفحة الأولى"></canvas>`:`<div class="preview-fallback"><i class="fas ${isWord?'fa-file-word':'fa-file'}" style="color:${isWord?'#2474c6':'#777'}"></i><small>${isWord?'ملف Word — المعاينة المصغرة تتطلب تحويله إلى PDF':'لا تتوفر معاينة'}</small></div>`}
                         <span class="number">رقم ${file.material_number||file.material_id}</span>
                         <div class="file-name">${file.title || 'ملزمة دراسية'}</div>
                         <div class="instructor-name">
