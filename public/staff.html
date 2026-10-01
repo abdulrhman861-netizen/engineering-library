@@ -691,9 +691,9 @@
             document.head.appendChild(style);
 
             try {
-                await fetch('/api/discussions/create', {
+                const saveResponse = await fetch('/api/discussions/create', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json','Authorization':`Bearer ${localStorage.getItem('employeeToken')}` },
                     body: JSON.stringify({
                         studentName,
                         gender: gender === 'لطالبة' ? 'FEMALE' : 'MALE',
@@ -704,6 +704,7 @@
                         committee: committeeArray
                     })
                 });
+                const saved=await saveResponse.json();if(saveResponse.ok&&saved.documentsUrl&&confirm('تم حفظ المناقشة. هل تريد فتح إقرار المشرف وإقرار اللجنة وأسماء المناقشين؟'))window.open(saved.documentsUrl,'_blank');
             } catch (err) {
                 console.log("تمت معالجة الحفظ.");
             }

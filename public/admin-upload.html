@@ -24,6 +24,7 @@
         button { background: #004a99; color: white; border: none; padding: 15px; width: 100%; border-radius: 10px; cursor: pointer; font-weight: bold; margin-top: 15px; transition: 0.3s; font-size: 1rem; }
         button:hover { background: #003366; }
         button:disabled { background: #ccc; cursor: not-allowed; }
+        .drop{border:2px dashed #168a70;border-radius:12px;padding:24px;text-align:center;background:#f2fffb;cursor:pointer}.drop.over{background:#d9fff2;border-color:#004a99}.hint{font-size:.82rem;color:#667085}
     </style>
 </head>
 <body>
@@ -62,8 +63,9 @@
                 <option value="phd">الدكتوراه</option>
             </select>
             
-            <label for="file">ملف الملزمة (PDF):</label>
-            <input type="file" name="file" id="file" accept=".pdf" required>
+            <label for="file">ملف الملزمة (PDF أو Word أو صورة):</label>
+            <div class="drop" id="dropZone"><i class="fas fa-file-arrow-up fa-2x"></i><p>اسحب الملف من الحاسبة أو Telegram Desktop واتركه هنا</p><span id="picked" class="hint">أو اضغط لاختيار الملف</span></div>
+            <input type="file" name="file" id="file" accept=".pdf,.doc,.docx,image/*" required hidden>
             
             <button type="submit" id="upBtn"><i class="fas fa-cloud-upload-alt me-1"></i> إضافة إلى المكتبة الرقمية</button>
         </form>
@@ -77,6 +79,7 @@
             window.location.href = 'staff.html'; 
         }
         (async()=>{try{const [dr,sr]=await Promise.all([fetch('/api/departments'),fetch('/api/stages')]);if(dr.ok){const ds=await dr.json();department.innerHTML=ds.map(d=>`<option value="${d.code}">${d.name}</option>`).join('')}if(sr.ok){const ss=await sr.json();stage.innerHTML=ss.map(s=>`<option value="${s.code}">${s.name}</option>`).join('')}}catch{}})();
+        dropZone.onclick=()=>file.click();['dragenter','dragover'].forEach(x=>dropZone.addEventListener(x,e=>{e.preventDefault();dropZone.classList.add('over')}));['dragleave','drop'].forEach(x=>dropZone.addEventListener(x,e=>{e.preventDefault();dropZone.classList.remove('over')}));dropZone.addEventListener('drop',e=>{if(e.dataTransfer.files.length){const dt=new DataTransfer();dt.items.add(e.dataTransfer.files[0]);file.files=dt.files;showFile()}});file.onchange=showFile;function showFile(){if(!file.files[0])return;picked.textContent=file.files[0].name;if(!title.value)title.value=file.files[0].name.replace(/\.[^.]+$/,'')}
 
         // 2. رفع الملزمة عبر السيرفر بالأسماء الصحيحة المتوافقة مع السيرفر والأقسام
         document.getElementById('handoutForm').onsubmit = async (e) => {
