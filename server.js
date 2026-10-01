@@ -49,10 +49,14 @@ function sign(user) {
   if (!JWT_SECRET) throw new Error('JWT_SECRET غير مضبوط');
   return jwt.sign({ userId:user.user_id, role:user.role, name:user.full_name }, JWT_SECRET, { expiresIn:'12h' });
 }
-function auth(req,res,next) {
+async function auth(req,res,next) {
   try {
     const token = (req.headers.authorization || '').replace(/^Bearer\s+/i,'');
-    req.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if(!pool)return res.status(503).json({success:false,error:'قاعدة البيانات غير متصلة'});
+    const active=await pool.query('select user_id,full_name,role from users where user_id=$1 and is_active=true',[decoded.userId]);
+    if(!active.rowCount)return res.status(401).json({success:false,error:'الحساب معطّل أو غير موجود'});
+    req.user={...decoded,userId:active.rows[0].user_id,name:active.rows[0].full_name,role:active.rows[0].role};
     next();
   } catch { res.status(401).json({ success:false, error:'يجب تسجيل الدخول' }); }
 }
@@ -129,6 +133,7 @@ app.post('/api/auth/logout',auth,async(req,res)=>{const r=await pool.query(`with
 app.post('/api/admin/create-employee', auth, admin, async (req,res) => {
   const { phone,password,fullName,role='STAFF' }=req.body;
   if (!phone || !password || !fullName) return res.status(400).json({success:false,error:'جميع الحقول مطلوبة'});
+  if(String(password).length<6)return res.status(400).json({success:false,error:'كلمة المرور يجب ألا تقل عن 6 أحرف'});
   const hash=await bcrypt.hash(password,10);
   try { const r=await pool.query('insert into users(full_name,username,password_hash,role) values($1,$2,$3,$4) returning user_id,full_name,username,role',[fullName,phone,hash,['STAFF','TYPIST','ACCOUNTANT','ADMIN'].includes(role)?role:'STAFF']); res.json({success:true,user:r.rows[0]}); }
   catch(e){ res.status(400).json({success:false,error:e.code==='23505'?'اسم المستخدم موجود مسبقاً':e.message}); }
@@ -136,6 +141,8 @@ app.post('/api/admin/create-employee', auth, admin, async (req,res) => {
 app.get('/api/admin/employees',auth,admin,async(_req,res)=>{const r=await pool.query("select user_id,full_name,username,role,is_active,hourly_rate,overtime_hourly_rate,created_at from users order by created_at desc");res.json({success:true,employees:r.rows});});
 app.patch('/api/admin/employees/:id/password',auth,admin,async(req,res)=>{const password=String(req.body.password||'');if(password.length<6)return res.status(400).json({success:false,error:'كلمة المرور يجب ألا تقل عن 6 أحرف'});const hash=await bcrypt.hash(password,10);const r=await pool.query('update users set password_hash=$1 where user_id=$2 returning user_id,full_name',[hash,req.params.id]);if(!r.rowCount)return res.status(404).json({success:false,error:'الموظف غير موجود'});res.json({success:true,employee:r.rows[0]});});
 app.patch('/api/admin/employees/:id/rates',auth,admin,async(req,res)=>{const normal=Number(req.body.hourlyRate),overtime=Number(req.body.overtimeHourlyRate);if(!Number.isFinite(normal)||normal<0||!Number.isFinite(overtime)||overtime<0)return res.status(400).json({success:false,error:'أسعار الساعات غير صحيحة'});const r=await pool.query('update users set hourly_rate=$1,overtime_hourly_rate=$2 where user_id=$3 returning user_id,full_name,hourly_rate,overtime_hourly_rate',[normal,overtime,req.params.id]);res.json({success:Boolean(r.rowCount),employee:r.rows[0]});});
+app.patch('/api/admin/employees/:id/status',auth,admin,async(req,res)=>{const id=Number(req.params.id),isActive=Boolean(req.body.isActive);if(id===Number(req.user.userId))return res.status(400).json({success:false,error:'لا يمكنك تعطيل حساب المدير الذي تستخدمه الآن'});const r=await pool.query("update users set is_active=$1 where user_id=$2 and role<>'ADMIN' returning user_id,full_name,is_active",[isActive,id]);if(!r.rowCount)return res.status(404).json({success:false,error:'الموظف غير موجود أو الحساب حساب مدير'});res.json({success:true,employee:r.rows[0]});});
+app.post('/api/auth/change-password',auth,async(req,res)=>{const current=String(req.body.currentPassword||''),next=String(req.body.newPassword||'');if(next.length<6)return res.status(400).json({success:false,error:'كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف'});if(current===next)return res.status(400).json({success:false,error:'اختر كلمة مرور جديدة مختلفة'});const r=await pool.query('select password_hash from users where user_id=$1 and is_active=true',[req.user.userId]);if(!r.rowCount||!(await bcrypt.compare(current,r.rows[0].password_hash)))return res.status(401).json({success:false,error:'كلمة المرور الحالية غير صحيحة'});const hash=await bcrypt.hash(next,10);await pool.query('update users set password_hash=$1 where user_id=$2',[hash,req.user.userId]);res.json({success:true,message:'تم تغيير كلمة المرور بنجاح'});});
 app.post('/api/admin/set-location',auth,admin,async(req,res)=>{ await pool.query("insert into settings(setting_key,setting_value) values('library_location',$1::jsonb) on conflict(setting_key) do update set setting_value=excluded.setting_value,updated_at=now()",[JSON.stringify({lat:req.body.lat,lng:req.body.lng,radiusMeters:req.body.radiusMeters||50})]);res.json({success:true}); });
 app.post('/api/admin/upload-template',auth,admin,upload.fields([{name:'univLogo',maxCount:1},{name:'collegeLogo',maxCount:1},{name:'background',maxCount:1}]),async(req,res)=>{ const out={}; for(const [field,items] of Object.entries(req.files||{})){out[field]=await storeFile(items[0],'templates');} res.json({success:true,univUrl:out.univLogo?.url,collegeUrl:out.collegeLogo?.url,backgroundUrl:out.background?.url}); });
 
@@ -304,11 +311,37 @@ app.post('/api/accounting/entries',auth,accounting,async(req,res)=>{
   const method=['CASH','GREEN_CARD','BLACK_CARD','BANK'].includes(req.body.paymentMethod)?req.body.paymentMethod:'CASH';
   const amount=Number(req.body.amount);
   if(!type||!category||!Number.isFinite(amount)||amount<0)return res.status(400).json({success:false,error:'بيانات الحركة المالية غير صحيحة'});
-  const r=await pool.query('insert into financial_entries(entry_date,entry_type,category,description,amount,payment_method,created_by) values(coalesce($1,current_date),$2,$3,$4,$5,$6,$7) returning *',[req.body.entryDate||null,type,category,String(req.body.description||'').trim(),amount,method,req.user.userId]);
+  const r=await pool.query('insert into financial_entries(entry_date,entry_type,category,description,amount,payment_method,created_by,spent_by,entry_source) values(coalesce($1,current_date),$2,$3,$4,$5,$6,$7,$8,$9) returning *',[req.body.entryDate||null,type,category,String(req.body.description||'').trim(),amount,method,req.user.userId,String(req.body.spentBy||'').trim()||null,'MANUAL']);
   res.json({success:true,entry:r.rows[0]});
 });
 app.get('/api/accounting/entries',auth,accounting,async(req,res)=>{const {from,to}=dateRange(req);const r=await pool.query(`select f.*,u.full_name created_by_name from financial_entries f left join users u on u.user_id=f.created_by where entry_date between $1 and $2 order by entry_date desc,created_at desc limit 1000`,[from,to]);res.json({success:true,entries:r.rows,from,to});});
 app.delete('/api/accounting/entries/:id',auth,admin,async(req,res)=>{const r=await pool.query('delete from financial_entries where entry_id=$1 returning entry_id',[req.params.id]);res.json({success:Boolean(r.rowCount)});});
+app.post('/api/staff/daily-closing',auth,async(req,res)=>{
+  const reportDate=/^\d{4}-\d{2}-\d{2}$/.test(req.body.reportDate||'')?req.body.reportDate:null;
+  const income=Number(req.body.incomeAmount||0),expense=Number(req.body.expenseAmount||0);
+  const category=['SALARY','RENT','ELECTRICITY','POS_COMMISSION','SUPPLIES','OTHER'].includes(req.body.expenseCategory)?req.body.expenseCategory:'OTHER';
+  const description=String(req.body.description||'').trim(),spentBy=String(req.body.spentBy||'').trim();
+  if(!reportDate||!Number.isFinite(income)||income<0||!Number.isFinite(expense)||expense<0||(!income&&!expense))return res.status(400).json({success:false,error:'حدد التاريخ وأدخل مبلغ وارد أو مصروف صحيح'});
+  if(expense>0&&(!spentBy||!description))return res.status(400).json({success:false,error:'عند تسجيل المصروف يجب ذكر من صرف ونوع/تفاصيل الصرف'});
+  const client=await pool.connect();
+  try{
+    await client.query('begin');
+    const entries=[];
+    if(income>0){const r=await client.query("insert into financial_entries(entry_date,entry_type,category,description,amount,payment_method,created_by,entry_source) values($1,'INCOME','SALES',$2,$3,'CASH',$4,'DAILY_CLOSING') returning *",[reportDate,description||'جرد الوارد اليومي',income,req.user.userId]);entries.push(r.rows[0]);}
+    if(expense>0){const r=await client.query("insert into financial_entries(entry_date,entry_type,category,description,amount,payment_method,created_by,spent_by,entry_source) values($1,'EXPENSE',$2,$3,$4,'CASH',$5,$6,'DAILY_CLOSING') returning *",[reportDate,category,description,expense,req.user.userId,spentBy]);entries.push(r.rows[0]);}
+    await client.query('commit');
+    res.json({success:true,entries,message:'تم تسجيل الجرد اليومي بنجاح'});
+  }catch(e){await client.query('rollback');throw e;}finally{client.release();}
+});
+app.get('/api/accounting/trends',auth,accounting,async(req,res)=>{
+  const {from,to}=dateRange(req),group=['day','week','month','year'].includes(req.query.group)?req.query.group:'day';
+  const trunc={day:'day',week:'week',month:'month',year:'year'}[group];
+  const r=await pool.query(`select date_trunc('${trunc}',entry_date)::date period,
+    coalesce(sum(amount) filter(where entry_type='INCOME'),0) income,
+    coalesce(sum(amount) filter(where entry_type='EXPENSE'),0) expenses
+    from financial_entries where entry_date between $1 and $2 group by 1 order by 1`,[from,to]);
+  res.json({success:true,from,to,group,points:r.rows.map(x=>({period:x.period,income:Number(x.income),expenses:Number(x.expenses),profit:Number(x.income)-Number(x.expenses)}))});
+});
 app.post('/api/accounting/pos',auth,accounting,async(req,res)=>{
   const card=['GREEN_CARD','BLACK_CARD'].includes(req.body.cardType)?req.body.cardType:null,direction=req.body.direction==='OUT'?'OUT':'IN';
   const transfer=Number(req.body.transferAmount),commission=Number(req.body.commission||0);

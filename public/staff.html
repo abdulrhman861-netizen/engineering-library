@@ -17,7 +17,12 @@
     <style>
         body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #f4f6f9; padding-bottom: 50px; }
         .navbar-custom { background: linear-gradient(135deg, #004a99, #003366); color: white; }
+        .navbar-custom .container { max-width: 1500px; }
+        .navbar-custom .btn { font-size: 1rem !important; padding: .65rem .9rem !important; border-radius: 10px; margin-top: 4px; margin-bottom: 4px; }
+        .navbar-custom .btn i { font-size: 1.08rem; }
+        .navbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
         .card-custom { border-radius: 12px; border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        .daily-closing-card { border: 2px solid #13a36f; background: linear-gradient(145deg,#fff,#edfff8) !important; }
 
         @font-face {
             font-family: 'KhalidArtBold';
@@ -128,7 +133,7 @@
     <nav class="navbar navbar-custom shadow-sm mb-4">
         <div class="container d-flex justify-content-between align-items-center">
             <span class="navbar-brand text-white fw-bold"><i class="fa-solid fa-scroll me-2"></i>منصة الكادر والمناقشات الرقمية</span>
-            <div>
+            <div class="navbar-actions">
                 <span id="userGreeting" class="text-white me-3 fw-bold small"></span>
                 <a href="admin-upload.html" class="btn btn-success btn-sm fw-bold me-2"><i class="fa-solid fa-cloud-arrow-up me-1"></i> رفع ملزمة</a>
                 <a href="student-files.html" class="btn btn-warning btn-sm fw-bold me-2"><i class="fa-solid fa-print me-1"></i> ملفات الطباعة</a>
@@ -192,6 +197,44 @@
                                 <button onclick="registerAttendance('دخول')" class="btn btn-success fw-bold"><i class="fa-solid fa-right-to-bracket me-1"></i> تسجيل دخول الدوام</button>
                                 <button onclick="registerAttendance('خروج')" class="btn btn-danger fw-bold"><i class="fa-solid fa-right-from-bracket me-1"></i> تسجيل خروج الدوام</button>
                             </div>
+                        </div>
+                    </div>
+
+                    <div class="card card-custom daily-closing-card p-4 mb-4">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                            <div>
+                                <h5 class="fw-bold text-success mb-1"><i class="fa-solid fa-cash-register me-2"></i>جرد الوارد والمصروف اليومي</h5>
+                                <small class="text-muted">سيُسجَّل اسم الموظف الحالي تلقائيًا ويظهر في كشف المدير.</small>
+                            </div>
+                            <span class="badge bg-success fs-6"><i class="fa-solid fa-shield-check me-1"></i> سجل مالي موثّق</span>
+                        </div>
+                        <form onsubmit="saveDailyClosing(event)">
+                            <div class="row g-3">
+                                <div class="col-md-3"><label class="form-label fw-bold">تاريخ الجرد</label><input id="dailyDate" type="date" class="form-control" required></div>
+                                <div class="col-md-3"><label class="form-label fw-bold">مبلغ الوارد (د.ع)</label><input id="dailyIncome" type="number" min="0" step="1" value="0" class="form-control"></div>
+                                <div class="col-md-3"><label class="form-label fw-bold">مبلغ المصروف (د.ع)</label><input id="dailyExpense" type="number" min="0" step="1" value="0" class="form-control"></div>
+                                <div class="col-md-3"><label class="form-label fw-bold">نوع المصروف</label><select id="dailyExpenseCategory" class="form-select"><option value="SUPPLIES">مستلزمات</option><option value="SALARY">راتب موظف</option><option value="RENT">إيجار</option><option value="ELECTRICITY">كهرباء</option><option value="POS_COMMISSION">عمولة POS</option><option value="OTHER">أخرى</option></select></div>
+                                <div class="col-md-4"><label class="form-label fw-bold">من قام بالصرف؟</label><input id="dailySpentBy" class="form-control" placeholder="اسم الموظف أو المستفيد"></div>
+                                <div class="col-md-6"><label class="form-label fw-bold">بيان المصروف / ملاحظات الجرد</label><input id="dailyExpenseDescription" class="form-control" placeholder="مثال: شراء ورق A4 وحبر للطابعات"></div>
+                                <div class="col-md-2 d-grid align-items-end"><button class="btn btn-success fw-bold" type="submit"><i class="fa-solid fa-floppy-disk me-1"></i> حفظ الجرد</button></div>
+                            </div>
+                        </form>
+                        <div id="dailyClosingMsg" class="fw-bold mt-3" aria-live="polite"></div>
+                    </div>
+
+                    <div class="card card-custom p-4 mb-4 bg-white">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div><h5 class="fw-bold text-primary mb-1"><i class="fa-solid fa-key me-2"></i>تغيير كلمة المرور الخاصة بي</h5><small class="text-muted">أدخل كلمة المرور الحالية ثم اختر كلمة جديدة لا تقل عن 6 أحرف.</small></div>
+                            <button class="btn btn-outline-primary fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#passwordChangeBox"><i class="fa-solid fa-pen-to-square me-1"></i> تغيير كلمة المرور</button>
+                        </div>
+                        <div class="collapse mt-3" id="passwordChangeBox">
+                            <form onsubmit="changeMyPassword(event)" class="row g-3">
+                                <div class="col-md-4"><label class="form-label fw-bold">كلمة المرور الحالية</label><input id="currentPassword" type="password" class="form-control" autocomplete="current-password" required></div>
+                                <div class="col-md-4"><label class="form-label fw-bold">كلمة المرور الجديدة</label><input id="newPassword" type="password" minlength="6" class="form-control" autocomplete="new-password" required></div>
+                                <div class="col-md-4"><label class="form-label fw-bold">تأكيد كلمة المرور الجديدة</label><input id="confirmNewPassword" type="password" minlength="6" class="form-control" autocomplete="new-password" required></div>
+                                <div class="col-12"><button class="btn btn-primary fw-bold" type="submit"><i class="fa-solid fa-shield-halved me-1"></i> حفظ كلمة المرور الجديدة</button></div>
+                            </form>
+                            <div id="passwordChangeMsg" class="fw-bold mt-2" aria-live="polite"></div>
                         </div>
                     </div>
 
@@ -348,6 +391,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             generateCommitteeFields();
             updatePosterLayout();
+            document.getElementById('dailyDate').value = new Date().toISOString().slice(0,10);
             checkUserSession();
         });
 
@@ -411,6 +455,43 @@
                 alert('تم تسجيل الخروج وإيقاف احتساب ساعات العمل.');
                 checkUserSession();
             }
+        }
+
+        async function saveDailyClosing(event) {
+            event.preventDefault();
+            const msg = document.getElementById('dailyClosingMsg');
+            const body = {
+                reportDate: document.getElementById('dailyDate').value,
+                incomeAmount: document.getElementById('dailyIncome').value,
+                expenseAmount: document.getElementById('dailyExpense').value,
+                expenseCategory: document.getElementById('dailyExpenseCategory').value,
+                spentBy: document.getElementById('dailySpentBy').value,
+                description: document.getElementById('dailyExpenseDescription').value
+            };
+            msg.className = 'fw-bold mt-3 text-primary'; msg.textContent = 'جاري حفظ الجرد...';
+            try {
+                const res = await fetch('/api/staff/daily-closing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+                const data = await res.json();
+                msg.className = `fw-bold mt-3 ${res.ok?'text-success':'text-danger'}`;
+                msg.textContent = res.ok ? 'تم حفظ الجرد، وسيظهر مباشرة في حسابات المدير.' : (data.error || 'تعذر حفظ الجرد');
+                if(res.ok){ document.getElementById('dailyIncome').value='0'; document.getElementById('dailyExpense').value='0'; document.getElementById('dailySpentBy').value=''; document.getElementById('dailyExpenseDescription').value=''; }
+            } catch (_) { msg.className='fw-bold mt-3 text-danger'; msg.textContent='تعذر الاتصال بالخادم، حاول مرة أخرى.'; }
+        }
+
+        async function changeMyPassword(event) {
+            event.preventDefault();
+            const current = document.getElementById('currentPassword').value;
+            const next = document.getElementById('newPassword').value;
+            const confirmation = document.getElementById('confirmNewPassword').value;
+            const msg = document.getElementById('passwordChangeMsg');
+            if(next !== confirmation){ msg.className='fw-bold mt-2 text-danger'; msg.textContent='تأكيد كلمة المرور لا يطابق الكلمة الجديدة.'; return; }
+            try{
+                const res=await fetch('/api/auth/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:current,newPassword:next})});
+                const data=await res.json();
+                msg.className=`fw-bold mt-2 ${res.ok?'text-success':'text-danger'}`;
+                msg.textContent=res.ok?'تم تغيير كلمة المرور بنجاح. استخدمها في دخولك القادم.':(data.error||'تعذر تغيير كلمة المرور');
+                if(res.ok){document.getElementById('currentPassword').value='';document.getElementById('newPassword').value='';document.getElementById('confirmNewPassword').value='';}
+            }catch(_){msg.className='fw-bold mt-2 text-danger';msg.textContent='تعذر الاتصال بالخادم.';}
         }
 
         // جلب مهام الموظف

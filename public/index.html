@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root { --primary-color: #004a99; --secondary-color: #27ae60; --bg-color: #f8f9fa; }
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-color); margin: 0; padding-bottom: 80px; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: radial-gradient(circle at 50% 0,#e8f5ff 0,#f8f9fa 38%); margin: 0; padding-bottom: 80px; animation: pageIn .45s ease both; }
         header { background: white; padding: 15px 40px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border-bottom: 5px solid var(--primary-color); }
         .header-title h1 { margin: 0; color: var(--primary-color); font-size: 1.8rem; font-weight: bold; }
         .logo { width: 80px; height: auto; object-fit: contain; }
@@ -31,10 +31,13 @@
         .search-box i { position: absolute; right: 18px; top: 18px; color: #888; }
         
         .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; padding: 20px 40px; max-width: 1200px; margin: auto; }
-        .dept-card { background: white; padding: 20px 10px; border-radius: 15px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.05); cursor: pointer; transition: 0.3s; text-decoration: none; border: 1px solid transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        .dept-card:hover { transform: translateY(-5px); border-color: var(--primary-color); box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
-        .dept-card i { font-size: 2.2rem; color: var(--primary-color); margin-bottom: 12px; display: block; }
+        .dept-card { --accent:#0878d1; --accent2:#00b4d8; background: linear-gradient(145deg,#fff,#f7fbff); padding: 20px 10px; border-radius: 18px; text-align: center; box-shadow: 0 6px 18px rgba(0,44,88,.09); cursor: pointer; transition: transform .28s,box-shadow .28s,border-color .28s; text-decoration: none; border: 1px solid #e6eef6; display: flex; flex-direction: column; align-items: center; justify-content: center; animation: cardRise .45s ease both; }
+        .dept-card:nth-child(2n){--accent:#6938c9;--accent2:#a855f7}.dept-card:nth-child(3n){--accent:#008f68;--accent2:#2dd4bf}.dept-card:nth-child(4n){--accent:#d35400;--accent2:#f59e0b}
+        .dept-card:hover { transform: translateY(-8px) scale(1.025); border-color: var(--accent); box-shadow: 0 14px 28px color-mix(in srgb,var(--accent) 23%,transparent); }
+        .dept-card i { width:64px;height:64px;border-radius:20px;display:grid;place-items:center;font-size: 2rem; color:#fff; margin-bottom: 12px; background:linear-gradient(135deg,var(--accent),var(--accent2)); box-shadow:0 8px 18px color-mix(in srgb,var(--accent) 32%,transparent); transition:transform .28s; }
+        .dept-card:hover i{transform:rotate(-5deg) scale(1.08)}
         .dept-name { font-size: 1rem; font-weight: bold; color: #333; }
+        @keyframes pageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@keyframes cardRise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
         
         .student-files-card { background: #8e44ad !important; color: white !important; }
         .staff-card { background: #2c3e50 !important; color: white !important; }
