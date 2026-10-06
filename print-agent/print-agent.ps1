@@ -21,10 +21,11 @@ function Download-JobFile([string]$Url,[string]$BaseName) {
   Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $target
   return $target
 }
-function Make-IdPdf([string]$Front,[string]$Back,[long]$Id) {
+function Make-IdPdf([string]$Front,[string]$Back,[string]$Passport,[long]$Id) {
   $html=Join-Path $work "$Id-id.html";$pdf=Join-Path $work "$Id-id.pdf"
-  $frontUri=([uri]$Front).AbsoluteUri;$backUri=([uri]$Back).AbsoluteUri
-  $markup="<html><head><meta charset='utf-8'><style>@page{size:A4;margin:0}body{margin:0}.sheet{width:210mm;height:297mm;padding:20mm;box-sizing:border-box;display:flex;gap:10mm;align-items:flex-start;justify-content:center}.card{width:85.6mm;height:54mm;object-fit:contain}</style></head><body><div class='sheet'><img class='card' src='$frontUri'><img class='card' src='$backUri'></div></body></html>"
+  $frontUri=([uri]$Front).AbsoluteUri;$backUri=([uri]$Back).AbsoluteUri;$passportMarkup=''
+  if($Passport){$passportUri=([uri]$Passport).AbsoluteUri;$passportMarkup="<img class='passport' src='$passportUri'>"}
+  $markup="<html><head><meta charset='utf-8'><style>@page{size:A4;margin:0}body{margin:0}.sheet{width:210mm;height:297mm;padding:20mm;box-sizing:border-box;display:flex;gap:10mm;align-content:flex-start;justify-content:center;flex-wrap:wrap}.card{width:85.6mm;height:54mm;object-fit:contain}.passport{width:90mm;height:125mm;object-fit:contain;flex-basis:100%}</style></head><body><div class='sheet'><img class='card' src='$frontUri'><img class='card' src='$backUri'>$passportMarkup</div></body></html>"
   Set-Content -Path $html -Value $markup -Encoding UTF8
   $edge=Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'
   if(-not(Test-Path $edge)){$edge=Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'}
@@ -40,10 +41,12 @@ function Print-Job($Job) {
   if(-not(Get-Printer -Name $printer -ErrorAction SilentlyContinue)){throw "الطابعة غير مثبتة في Windows: $printer"}
   $first=Download-JobFile ([string]$Job.url) ("$($Job.id)-1")
   $toPrint=$first
-  if($Job.printType -eq 'ID_CARD'){
+  if($Job.printType -in @('ID_CARD','ID_PASSPORT')){
     if(-not $Job.secondUrl){throw 'صورة ظهر الهوية غير موجودة'}
     $second=Download-JobFile ([string]$Job.secondUrl) ("$($Job.id)-2")
-    $toPrint=Make-IdPdf $first $second ([long]$Job.id)
+    $third=$null
+    if($Job.thirdUrl){$third=Download-JobFile ([string]$Job.thirdUrl) ("$($Job.id)-3")}
+    $toPrint=Make-IdPdf $first $second $third ([long]$Job.id)
   }
   $ext=[IO.Path]::GetExtension($toPrint).ToLowerInvariant();$copies=[Math]::Max(1,[int]$Job.copies)
   if($ext -in @('.doc','.docx')){
@@ -51,7 +54,9 @@ function Print-Job($Job) {
     try{$word.Visible=$false;$word.DisplayAlerts=0;$doc=$word.Documents.Open($toPrint,$false,$true);$word.ActivePrinter=$printer;$doc.PrintOut($false,$false,0,'','',$null,0,$copies);$doc.Close($false)}finally{$word.Quit()}
   }else{
     $colorSetting=if($Job.colorMode -eq 'COLOR'){'color'}else{'monochrome'}
-    $printSettings=("{0}x,paper=A4,fit,bin=auto,ignore-pdf-print-settings,{1}" -f $copies,$colorSetting)
+    $paperSetting=if($Job.paperSize -eq 'A3'){'paper=A3'}else{'paper=A4'}
+    $duplexSetting=switch([string]$Job.duplexMode){'DUPLEX_LONG'{'duplexlong'}'DUPLEX_SHORT'{'duplexshort'}default{'simplex'}}
+    $printSettings=("{0}x,{1},fit,bin=auto,ignore-pdf-print-settings,{2},{3}" -f $copies,$paperSetting,$colorSetting,$duplexSetting)
     & $sumatra -silent -print-to $printer -print-settings $printSettings $toPrint
     if($LASTEXITCODE -ne 0){throw "SumatraPDF exit code $LASTEXITCODE"}
   }
