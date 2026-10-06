@@ -18,6 +18,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BUCKET = process.env.SUPABASE_BUCKET || 'library-files';
+const PRINT_AGENT_TOKEN = process.env.PRINT_AGENT_TOKEN || '';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const localUploads = path.join(__dirname, 'public', 'uploads');
 fs.mkdirSync(localUploads, { recursive: true });
@@ -66,6 +67,13 @@ function admin(req,res,next) {
 }
 function accounting(req,res,next) {
   if (!['ADMIN','ACCOUNTANT'].includes(req.user?.role)) return res.status(403).json({success:false,error:'هذه العملية للمدير أو المحاسب فقط'});
+  next();
+}
+function printAgentAuth(req,res,next) {
+  const supplied = String(req.headers['x-print-agent-token'] || '');
+  if (!PRINT_AGENT_TOKEN || supplied.length !== PRINT_AGENT_TOKEN.length || !crypto.timingSafeEqual(Buffer.from(supplied),Buffer.from(PRINT_AGENT_TOKEN))) {
+    return res.status(401).json({success:false,error:'وكيل الطباعة غير مصرح له'});
+  }
   next();
 }
 function safeName(name) {
@@ -230,9 +238,21 @@ app.post('/upload-student-file',upload.array('files',20),async(req,res)=>{
   }
   res.json({success:true,message:`تم إرسال ${created.length} طلب للطباعة`,orderIds:created});
 });
-app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query("select file_id as id,original_name as \"originalName\",file_path as url,second_file_path as \"secondUrl\",print_type as \"printType\",copies,color_mode,status,student_name,phone,notes,created_at as time from student_print_files where status<>'CANCELLED' and archived_at is null order by created_at desc limit 200"); res.json(r.rows); });
+app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query("select file_id as id,original_name as \"originalName\",file_path as url,second_file_path as \"secondUrl\",print_type as \"printType\",copies,color_mode,status,student_name,phone,notes,created_at as time,direct_print_status as \"directPrintStatus\",printer_number as \"printerNumber\",print_error as \"printError\" from student_print_files where status<>'CANCELLED' and archived_at is null order by created_at desc limit 200"); res.json(r.rows); });
 app.get('/api/student-files/:id',auth,async(req,res)=>{const r=await pool.query('select file_id as id,original_name as "originalName",file_path as url,second_file_path as "secondUrl",print_type as "printType",copies,color_mode,student_name,phone,notes from student_print_files where file_id=$1',[req.params.id]);if(!r.rowCount)return res.status(404).json({success:false,error:'الطلب غير موجود'});res.json(r.rows[0]);});
 app.patch('/api/student-files/:id/status',auth,async(req,res)=>{ const status=['QUEUED','PRINTING','COMPLETED','CANCELLED'].includes(req.body.status)?req.body.status:'QUEUED'; await pool.query("update student_print_files set status=$1,completed_by=case when $1='COMPLETED' then $2 else completed_by end,completed_at=case when $1='COMPLETED' then now() else completed_at end where file_id=$3",[status,req.user.userId,req.params.id]); res.json({success:true}); });
+app.post('/api/student-files/:id/direct-print',auth,async(req,res)=>{
+  const printerNumber=Number(req.body.printerNumber),allowed=[1,2,3,5,8,9];
+  if(!allowed.includes(printerNumber))return res.status(400).json({success:false,error:'اختر طابعة فعالة من 1 أو 2 أو 3 أو 5 أو 8 أو 9'});
+  const r=await pool.query(`update student_print_files set direct_print_status='QUEUED',printer_number=$1,print_error=null,queued_at=now(),claimed_at=null,agent_id=null,status='QUEUED' where file_id=$2 and status<>'CANCELLED' returning file_id,color_mode,printer_number`,[printerNumber,req.params.id]);
+  if(!r.rowCount)return res.status(404).json({success:false,error:'ملف الطباعة غير موجود أو ملغى'});
+  res.json({success:true,message:`أُرسل الطلب إلى الطابعة رقم ${printerNumber}`,job:r.rows[0]});
+});
+app.post('/api/student-files/:id/cancel-direct',auth,async(req,res)=>{
+  const r=await pool.query("update student_print_files set direct_print_status='CANCELLED',print_error='ألغاه الموظف' where file_id=$1 and direct_print_status in ('QUEUED','FAILED') returning file_id",[req.params.id]);
+  if(!r.rowCount)return res.status(409).json({success:false,error:'تعذر الإلغاء؛ ربما بدأت الطباعة بالفعل'});
+  res.json({success:true,message:'تم إلغاء أمر الطباعة المباشرة'});
+});
 app.delete('/api/student-files/:id',auth,async(req,res)=>{ const r=await pool.query('delete from student_print_files where file_id=$1 returning storage_path,file_path,second_storage_path,second_file_path',[req.params.id]); if(r.rowCount){await removeStored(r.rows[0].storage_path,r.rows[0].file_path);await removeStored(r.rows[0].second_storage_path,r.rows[0].second_file_path);} res.json({success:true}); });
 app.post('/api/student-files/:id/promote-to-material',auth,async(req,res)=>{
   const {title,doctorName,department,stage}=req.body;
@@ -427,6 +447,25 @@ async function payrollReport(from,to){return pool.query(`with hours as (select u
 app.get('/api/admin/attendance-reports',auth,admin,async(req,res)=>{const {from,to}=dateRange(req),[logs,summary]=await Promise.all([pool.query(`select a.*,u.full_name employee_name from attendance a join users u using(user_id) where (a.check_in at time zone 'Asia/Baghdad')::date between $1 and $2 order by check_in desc limit 1000`,[from,to]),payrollReport(from,to)]);res.json({success:true,from,to,logs:logs.rows,summary:summary.rows});});
 app.get('/api/accounting/payroll',auth,accounting,async(req,res)=>{const {from,to}=dateRange(req),r=await payrollReport(from,to);res.json({success:true,from,to,employees:r.rows,total:r.rows.reduce((s,x)=>s+Number(x.total_pay||0),0)});});
 app.get('/api/admin/productivity',auth,admin,async(req,res)=>{const {from,to}=dateRange(req),r=await pool.query(`select u.user_id,u.full_name,count(t.task_id) completed_tasks,coalesce(sum(t.amount_total),0) work_value,coalesce(sum(t.amount_paid),0) collected,coalesce(avg(extract(epoch from(t.completed_at-t.claimed_at))/3600) filter(where t.claimed_at is not null),0) avg_completion_hours from users u left join tasks t on t.completed_by=u.user_id and t.status='COMPLETED' and (t.completed_at at time zone 'Asia/Baghdad')::date between $1 and $2 where u.role<>'ADMIN' group by u.user_id order by completed_tasks desc,u.full_name`,[from,to]);res.json({success:true,from,to,employees:r.rows});});
+
+app.get('/api/print-agent/next',printAgentAuth,async(req,res)=>{
+  const agentId=String(req.query.agentId||'library-main').slice(0,100),client=await pool.connect();
+  try{
+    await client.query('begin');
+    const r=await client.query(`select file_id,original_name,file_path,second_file_path,print_type,copies,color_mode,printer_number,notes from student_print_files where direct_print_status='QUEUED' and status<>'CANCELLED' order by queued_at nulls last,created_at for update skip locked limit 1`);
+    if(!r.rowCount){await client.query('commit');return res.status(204).end();}
+    const job=r.rows[0];
+    await client.query("update student_print_files set direct_print_status='CLAIMED',status='PRINTING',claimed_at=now(),agent_id=$1 where file_id=$2",[agentId,job.file_id]);
+    await client.query('commit');
+    res.json({success:true,job:{id:job.file_id,originalName:job.original_name,url:job.file_path,secondUrl:job.second_file_path,printType:job.print_type,copies:job.copies,colorMode:job.color_mode,printerNumber:job.printer_number,notes:job.notes}});
+  }catch(e){await client.query('rollback');throw e;}finally{client.release();}
+});
+app.post('/api/print-agent/jobs/:id/result',printAgentAuth,async(req,res)=>{
+  const ok=Boolean(req.body.success),agentId=String(req.body.agentId||'library-main').slice(0,100),error=String(req.body.error||'').slice(0,1000);
+  const r=await pool.query(ok?`update student_print_files set direct_print_status='COMPLETED',status='COMPLETED',completed_at=now(),print_error=null,agent_id=$1 where file_id=$2 and direct_print_status='CLAIMED' returning file_id`:`update student_print_files set direct_print_status='FAILED',status='QUEUED',print_error=$1,agent_id=$2 where file_id=$3 and direct_print_status='CLAIMED' returning file_id`,ok?[agentId,req.params.id]:[error||'فشلت الطباعة',agentId,req.params.id]);
+  res.json({success:Boolean(r.rowCount)});
+});
+app.get('/api/print-agent/health',printAgentAuth,(_req,res)=>res.json({success:true,server:true,time:new Date().toISOString()}));
 
 app.use((err,_req,res,_next)=>{ console.error(err); if(err instanceof multer.MulterError)return res.status(400).json({success:false,error:`حجم الملف يتجاوز ${MAX_UPLOAD_MB}MB`}); if(String(err.message||'').startsWith('نوع الملف غير مدعوم'))return res.status(400).json({success:false,error:err.message}); if(String(err.message||'').startsWith('فشل تخزين الملف'))return res.status(502).json({success:false,error:'تعذر تخزين الملف. تحقق من مساحة Supabase ونوع الملف المسموح'}); res.status(500).json({success:false,error:'حدث خطأ في الخادم',detail:process.env.NODE_ENV==='development'?err.message:undefined}); });
 app.listen(PORT,'0.0.0.0',()=>{

@@ -1,0 +1,6 @@
+node_modules/
+.env
+public/uploads/*
+!public/uploads/.gitkeep
+npm-debug.log*
+print-agent/config.json
