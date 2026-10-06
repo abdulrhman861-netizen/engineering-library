@@ -6,6 +6,8 @@ const urlsToCache = [
   '/index.html',
   '/staff.html',
   '/staff-materials.html',
+  '/id-editor.html',
+  '/print-reports.html',
   '/material-staff-preview.html',
   '/admin.html',
   '/upload.html',

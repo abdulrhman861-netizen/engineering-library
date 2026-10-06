@@ -99,9 +99,11 @@
                         <div class="file-name">${file.title || 'ملزمة دراسية'}</div>
                         <div class="instructor-name">
                             <i class="fas fa-chalkboard-teacher me-1"></i> ${file.doctor_name || 'أستاذ المادة'}
-                        </div><div class="date">تاريخ الرفع: ${new Date(file.created_at).toLocaleDateString('ar-IQ')}</div>
+                        </div><div class="date"><b>عدد الصفحات:</b> ${file.page_count||'غير محسوب'} — تاريخ الرفع: ${new Date(file.created_at).toLocaleDateString('ar-IQ')}</div>
                     </div>
                     <div class="card-actions">
+                        <select id="color-${file.material_id}" style="padding:10px;border-radius:9px;border:1px solid #ccd5df;margin-bottom:8px;width:100%"><option value="BW">أسود وأبيض</option><option value="COLOR">ملون</option></select>
+                        <input id="copies-${file.material_id}" type="number" min="1" max="100" value="1" aria-label="عدد النسخ" style="padding:10px;border-radius:9px;border:1px solid #ccd5df;margin-bottom:8px;width:100%;box-sizing:border-box">
                         <button onclick="requestPrint(${file.material_id})" class="btn-action btn-print">
                             <i class="fas fa-print"></i> طلب طباعة في المكتبة
                         </button>
@@ -139,10 +141,12 @@
 
     async function requestPrint(materialId) {
         try {
+            const colorMode=document.getElementById(`color-${materialId}`).value;
+            const copies=Number(document.getElementById(`copies-${materialId}`).value||1);
             const res = await fetch('/api/materials/print', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ materialId })
+                body: JSON.stringify({ materialId,colorMode,copies })
             });
             const data = await res.json();
             if (res.ok) {

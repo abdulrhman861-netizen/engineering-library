@@ -80,6 +80,18 @@ function safeName(name) {
   const ext = path.extname(name).toLowerCase();
   return `${Date.now()}-${crypto.randomUUID()}${ext}`;
 }
+function estimatePageCount(file) {
+  const mime=String(file?.mimetype||'').toLowerCase(),ext=path.extname(file?.originalname||'').toLowerCase();
+  if(mime.startsWith('image/')||['.jpg','.jpeg','.png','.webp','.heic','.heif'].includes(ext))return 1;
+  if(mime==='application/pdf'||ext==='.pdf'){
+    try{
+      const raw=file.buffer.toString('latin1');
+      const matches=raw.match(/\/Type\s*\/Page\b/g);
+      return Math.max(1,matches?.length||1);
+    }catch{return null;}
+  }
+  return null;
+}
 function storageHeaders(contentType) {
   const headers = { apikey:SERVICE_KEY };
   if (SERVICE_KEY?.startsWith('eyJ')) headers.authorization = `Bearer ${SERVICE_KEY}`;
@@ -166,12 +178,12 @@ app.post('/api/materials/upload',auth,upload.single('file'),async(req,res)=>{
   if(String(req.file.mimetype).startsWith('audio/'))return res.status(400).json({success:false,message:'التسجيلات الصوتية مخصصة للدردشة فقط'});
   const {title,doctorName,department,stage}=req.body;
   if(!department||!stage)return res.status(400).json({success:false,message:'القسم والمرحلة مطلوبان'});
-  const stored=await storeFile(req.file,'materials');
+  const stored=await storeFile(req.file,'materials'),pageCount=estimatePageCount(req.file);
   const client=await pool.connect();
-  try {await client.query('begin');await client.query('select pg_advisory_xact_lock(hashtext($1))',[`${department}:${stage}`]);const n=await client.query('select coalesce(max(material_number),0)+1 n from study_materials where department_code=$1 and stage_code=$2',[department,stage]);const r=await client.query('insert into study_materials(department_code,stage_code,subject_name,title,doctor_name,file_path,storage_path,uploaded_by,material_number,mime_type,file_size_bytes) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *',[department,stage,title||req.file.originalname,title||req.file.originalname,doctorName||'',stored.url,stored.storagePath,req.user.userId,n.rows[0].n,req.file.mimetype,req.file.size||req.file.buffer?.length||0]);await client.query('commit');res.json({success:true,message:'تم رفع الملزمة بنجاح',material:r.rows[0]}); }
+  try {await client.query('begin');await client.query('select pg_advisory_xact_lock(hashtext($1))',[`${department}:${stage}`]);const n=await client.query('select coalesce(max(material_number),0)+1 n from study_materials where department_code=$1 and stage_code=$2',[department,stage]);const r=await client.query('insert into study_materials(department_code,stage_code,subject_name,title,doctor_name,file_path,storage_path,uploaded_by,material_number,mime_type,file_size_bytes,page_count) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *',[department,stage,title||req.file.originalname,title||req.file.originalname,doctorName||'',stored.url,stored.storagePath,req.user.userId,n.rows[0].n,req.file.mimetype,req.file.size||req.file.buffer?.length||0,pageCount]);await client.query('commit');res.json({success:true,message:'تم رفع الملزمة بنجاح',material:r.rows[0]}); }
   catch(e){await client.query('rollback');await removeStored(stored.storagePath,stored.url);throw e;}finally{client.release();}
 });
-app.get('/api/materials/department/:deptId',async(req,res)=>{if(!configured(res))return;const values=[req.params.deptId];let sql='select material_id,material_number,department_code,stage_code,subject_name,title,doctor_name,file_path,mime_type,created_at from study_materials where department_code=$1';if(req.query.stage){values.push(req.query.stage);sql+=` and stage_code=$${values.length}`;}if(req.query.q){values.push(`%${String(req.query.q).trim()}%`);sql+=` and (title ilike $${values.length} or doctor_name ilike $${values.length} or subject_name ilike $${values.length})`;}sql+=req.query.sort==='oldest'?' order by created_at asc':' order by created_at desc';const r=await pool.query(sql,values);res.json(r.rows);});
+app.get('/api/materials/department/:deptId',async(req,res)=>{if(!configured(res))return;const values=[req.params.deptId];let sql='select material_id,material_number,department_code,stage_code,subject_name,title,doctor_name,file_path,mime_type,page_count,created_at from study_materials where department_code=$1';if(req.query.stage){values.push(req.query.stage);sql+=` and stage_code=$${values.length}`;}if(req.query.q){values.push(`%${String(req.query.q).trim()}%`);sql+=` and (title ilike $${values.length} or doctor_name ilike $${values.length} or subject_name ilike $${values.length})`;}sql+=req.query.sort==='oldest'?' order by created_at asc':' order by created_at desc';const r=await pool.query(sql,values);res.json(r.rows);});
 app.get('/api/materials/recent',async(_req,res)=>{const r=await pool.query(`select m.material_id,m.material_number,m.title,m.doctor_name,m.department_code,m.stage_code,m.created_at,coalesce(d.name,m.department_code) department_name,coalesce(s.name,m.stage_code) stage_name from study_materials m left join departments d on d.code=m.department_code left join stages s on s.code=m.stage_code where m.created_at>=now()-interval '24 hours' order by m.created_at desc limit 30`);res.json({success:true,materials:r.rows});});
 app.get('/api/materials/:id/preview-content',async(req,res)=>{const r=await pool.query('select file_path,mime_type from study_materials where material_id=$1',[req.params.id]);if(!r.rowCount)return res.sendStatus(404);const x=r.rows[0];try{const upstream=await fetch(x.file_path);if(!upstream.ok)return res.status(502).send('تعذر جلب ملف المعاينة');res.set('Content-Type',x.mime_type||upstream.headers.get('content-type')||'application/octet-stream');res.set('Cache-Control','public, max-age=3600');res.send(Buffer.from(await upstream.arrayBuffer()));}catch{return res.status(502).send('تعذر جلب ملف المعاينة')}});
 app.patch('/api/materials/:id',auth,async(req,res)=>{const old=await pool.query('select * from study_materials where material_id=$1',[req.params.id]);if(!old.rowCount)return res.status(404).json({success:false,error:'الملزمة غير موجودة'});const x=old.rows[0],department=String(req.body.department||x.department_code),stage=String(req.body.stage||x.stage_code),changed=department!==x.department_code||stage!==x.stage_code;const client=await pool.connect();try{await client.query('begin');let number=x.material_number;if(changed){await client.query('select pg_advisory_xact_lock(hashtext($1))',[`${department}:${stage}`]);const n=await client.query('select coalesce(max(material_number),0)+1 n from study_materials where department_code=$1 and stage_code=$2',[department,stage]);number=n.rows[0].n;}const r=await client.query('update study_materials set title=$1,subject_name=$1,doctor_name=$2,department_code=$3,stage_code=$4,material_number=$5,updated_by=$6,updated_at=now() where material_id=$7 returning *',[String(req.body.title||x.title).trim(),String(req.body.doctorName??x.doctor_name).trim(),department,stage,number,req.user.userId,req.params.id]);await client.query("insert into material_audit(material_id,action,old_values,new_values,changed_by) values($1,'UPDATE',$2,$3,$4)",[req.params.id,x,r.rows[0],req.user.userId]);await client.query('commit');res.json({success:true,material:r.rows[0]});}catch(e){await client.query('rollback');throw e;}finally{client.release();}});
@@ -190,7 +202,7 @@ app.get('/api/admin/materials',auth,admin,async(req,res)=>{
   res.json({success:true,materials:r.rows,storage:{usedBytes:used,quotaBytes:quota,materialCount:r.rowCount}});
 });
 app.get('/api/admin/materials/:id',auth,admin,async(req,res)=>{const r=await pool.query(`select m.*,coalesce(d.name,m.department_code) department_name,coalesce(s.name,m.stage_code) stage_name from study_materials m left join departments d on d.code=m.department_code left join stages s on s.code=m.stage_code where m.material_id=$1`,[req.params.id]);if(!r.rowCount)return res.status(404).json({success:false,error:'الملزمة غير موجودة'});res.json({success:true,material:r.rows[0]});});
-app.get('/api/staff/materials',auth,async(_req,res)=>{const r=await pool.query(`select m.material_id,m.material_number,m.title,m.doctor_name,m.department_code,m.stage_code,m.created_at,m.file_path,m.mime_type,m.file_size_bytes,coalesce(d.name,m.department_code) department_name,coalesce(s.name,m.stage_code) stage_name from study_materials m left join departments d on d.code=m.department_code left join stages s on s.code=m.stage_code order by m.created_at desc`);const used=r.rows.reduce((sum,x)=>sum+Number(x.file_size_bytes||0),0),quota=Math.max(1,Number(process.env.STORAGE_QUOTA_MB||1024))*1024*1024;res.json({success:true,materials:r.rows,storage:{usedBytes:used,quotaBytes:quota,materialCount:r.rowCount}})});
+app.get('/api/staff/materials',auth,async(_req,res)=>{const r=await pool.query(`select m.material_id,m.material_number,m.title,m.doctor_name,m.department_code,m.stage_code,m.created_at,m.file_path,m.mime_type,m.file_size_bytes,m.page_count,coalesce(d.name,m.department_code) department_name,coalesce(s.name,m.stage_code) stage_name from study_materials m left join departments d on d.code=m.department_code left join stages s on s.code=m.stage_code order by m.created_at desc`);const used=r.rows.reduce((sum,x)=>sum+Number(x.file_size_bytes||0),0),quota=Math.max(1,Number(process.env.STORAGE_QUOTA_MB||1024))*1024*1024;res.json({success:true,materials:r.rows,storage:{usedBytes:used,quotaBytes:quota,materialCount:r.rowCount}})});
 app.get('/api/staff/materials/:id',auth,async(req,res)=>{const r=await pool.query(`select m.*,coalesce(d.name,m.department_code) department_name,coalesce(s.name,m.stage_code) stage_name from study_materials m left join departments d on d.code=m.department_code left join stages s on s.code=m.stage_code where m.material_id=$1`,[req.params.id]);if(!r.rowCount)return res.status(404).json({success:false,error:'الملزمة غير موجودة'});res.json({success:true,material:r.rows[0]})});
 app.delete('/api/materials/:id',auth,admin,async(req,res)=>{
   const id=Number(req.params.id);
@@ -204,12 +216,12 @@ app.post('/api/materials/print',async(req,res)=>{
   if(!configured(res))return;
   const materialId=Number(req.body.materialId);
   if(!Number.isInteger(materialId)||materialId<1)return res.status(400).json({success:false,error:'رقم الملزمة غير صحيح'});
-  const material=await pool.query('select title,file_path from study_materials where material_id=$1',[materialId]);
+  const material=await pool.query('select title,file_path,page_count from study_materials where material_id=$1',[materialId]);
   if(!material.rowCount)return res.status(404).json({success:false,error:'الملزمة غير موجودة'});
   const item=material.rows[0];
   const order=await pool.query(
-    "insert into student_print_files(original_name,file_path,storage_path,copies,color_mode,student_name,phone,notes) values($1,$2,null,1,'BW','','','طلب طباعة ملزمة من المكتبة الرقمية') returning file_id",
-    [item.title,item.file_path]
+    "insert into student_print_files(original_name,file_path,storage_path,copies,color_mode,student_name,phone,notes,page_count) values($1,$2,null,$3,$4,$5,$6,'طلب طباعة ملزمة من المكتبة الرقمية',$7) returning file_id",
+    [item.title,item.file_path,Math.max(1,Number(req.body.copies||1)),req.body.colorMode==='COLOR'?'COLOR':'BW',String(req.body.studentName||'').trim(),String(req.body.phone||'').trim(),item.page_count]
   );
   res.json({success:true,message:'تم إرسال طلب الطباعة إلى موظفي المكتبة',orderId:order.rows[0].file_id});
 });
@@ -226,24 +238,29 @@ app.post('/upload-student-file',upload.array('files',20),async(req,res)=>{
     const front=await storeFile(files[0],'print-orders');
     const back=await storeFile(files[1],'print-orders');
     try{
-      const r=await pool.query("insert into student_print_files(original_name,file_path,storage_path,second_file_path,second_storage_path,print_type,copies,color_mode,student_name,phone,notes) values($1,$2,$3,$4,$5,'ID_CARD',$6,$7,$8,$9,$10) returning file_id",['هوية - الوجه والظهر',front.url,front.storagePath,back.url,back.storagePath,...common]);
+      const r=await pool.query("insert into student_print_files(original_name,file_path,storage_path,second_file_path,second_storage_path,print_type,copies,color_mode,student_name,phone,notes,page_count) values($1,$2,$3,$4,$5,'ID_CARD',$6,$7,$8,$9,$10,1) returning file_id",['هوية - الوجه والظهر',front.url,front.storagePath,back.url,back.storagePath,...common]);
       created.push(r.rows[0].file_id);
     }catch(e){await removeStored(front.storagePath,front.url);await removeStored(back.storagePath,back.url);throw e;}
   }else{
     for(const file of files){
       const stored=await storeFile(file,'print-orders');
-      try{const r=await pool.query("insert into student_print_files(original_name,file_path,storage_path,print_type,copies,color_mode,student_name,phone,notes) values($1,$2,$3,'DOCUMENT',$4,$5,$6,$7,$8) returning file_id",[file.originalname,stored.url,stored.storagePath,...common]);created.push(r.rows[0].file_id);}
+      try{const r=await pool.query("insert into student_print_files(original_name,file_path,storage_path,print_type,copies,color_mode,student_name,phone,notes,page_count) values($1,$2,$3,'DOCUMENT',$4,$5,$6,$7,$8,$9) returning file_id",[file.originalname,stored.url,stored.storagePath,...common,estimatePageCount(file)]);created.push(r.rows[0].file_id);}
       catch(e){await removeStored(stored.storagePath,stored.url);throw e;}
     }
   }
   res.json({success:true,message:`تم إرسال ${created.length} طلب للطباعة`,orderIds:created});
 });
-app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query("select file_id as id,original_name as \"originalName\",file_path as url,second_file_path as \"secondUrl\",print_type as \"printType\",copies,color_mode,status,student_name,phone,notes,created_at as time,direct_print_status as \"directPrintStatus\",printer_number as \"printerNumber\",print_error as \"printError\" from student_print_files where status<>'CANCELLED' and archived_at is null order by created_at desc limit 200"); res.json(r.rows); });
+app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query("select file_id as id,original_name as \"originalName\",file_path as url,second_file_path as \"secondUrl\",print_type as \"printType\",copies,color_mode,page_count as \"pageCount\",status,student_name,phone,notes,created_at as time,direct_print_status as \"directPrintStatus\",printer_number as \"printerNumber\",print_error as \"printError\" from student_print_files where status<>'CANCELLED' and archived_at is null order by created_at desc limit 200"); res.json(r.rows); });
 app.get('/api/student-files/:id',auth,async(req,res)=>{const r=await pool.query('select file_id as id,original_name as "originalName",file_path as url,second_file_path as "secondUrl",print_type as "printType",copies,color_mode,student_name,phone,notes from student_print_files where file_id=$1',[req.params.id]);if(!r.rowCount)return res.status(404).json({success:false,error:'الطلب غير موجود'});res.json(r.rows[0]);});
 app.patch('/api/student-files/:id/status',auth,async(req,res)=>{ const status=['QUEUED','PRINTING','COMPLETED','CANCELLED'].includes(req.body.status)?req.body.status:'QUEUED'; await pool.query("update student_print_files set status=$1,completed_by=case when $1='COMPLETED' then $2 else completed_by end,completed_at=case when $1='COMPLETED' then now() else completed_at end where file_id=$3",[status,req.user.userId,req.params.id]); res.json({success:true}); });
 app.post('/api/student-files/:id/direct-print',auth,async(req,res)=>{
   const printerNumber=Number(req.body.printerNumber),allowed=[1,2,3,5,8,9];
   if(!allowed.includes(printerNumber))return res.status(400).json({success:false,error:'اختر طابعة فعالة من 1 أو 2 أو 3 أو 5 أو 8 أو 9'});
+  const item=await pool.query('select color_mode from student_print_files where file_id=$1',[req.params.id]);
+  if(!item.rowCount)return res.status(404).json({success:false,error:'ملف الطباعة غير موجود'});
+  const colorPrinters=[5,8],bwPrinters=[1,2,3,9];
+  if(item.rows[0].color_mode==='COLOR'&&!colorPrinters.includes(printerNumber))return res.status(400).json({success:false,error:'الطلب ملون؛ اختر الطابعة 8 أو 5'});
+  if(item.rows[0].color_mode!=='COLOR'&&!bwPrinters.includes(printerNumber))return res.status(400).json({success:false,error:'الطلب أسود وأبيض؛ اختر الطابعة 1 أو 2 أو 3 أو 9'});
   const r=await pool.query(`update student_print_files set direct_print_status='QUEUED',printer_number=$1,print_error=null,queued_at=now(),claimed_at=null,agent_id=null,status='QUEUED' where file_id=$2 and status<>'CANCELLED' returning file_id,color_mode,printer_number`,[printerNumber,req.params.id]);
   if(!r.rowCount)return res.status(404).json({success:false,error:'ملف الطباعة غير موجود أو ملغى'});
   res.json({success:true,message:`أُرسل الطلب إلى الطابعة رقم ${printerNumber}`,job:r.rows[0]});
@@ -265,7 +282,8 @@ app.post('/api/student-files/:id/promote-to-material',auth,async(req,res)=>{
   const buffer=Buffer.from(await response.arrayBuffer());
   if(buffer.length>MAX_UPLOAD_MB*1024*1024)return res.status(400).json({success:false,error:`حجم الملف يتجاوز ${MAX_UPLOAD_MB}MB`});
   const stored=await storeFile({originalname:source.rows[0].original_name,mimetype:response.headers.get('content-type')||'application/octet-stream',buffer},'materials');
-  try{const r=await pool.query('insert into study_materials(department_code,stage_code,subject_name,title,doctor_name,file_path,storage_path,uploaded_by) values($1,$2,$3,$4,$5,$6,$7,$8) returning material_id',[department,stage,title,title,doctorName||'',stored.url,stored.storagePath,req.user.userId]);res.json({success:true,message:'تمت إضافة الملف إلى الملازم',materialId:r.rows[0].material_id});}
+  const pageCount=estimatePageCount({originalname:source.rows[0].original_name,mimetype:response.headers.get('content-type')||'',buffer});
+  try{const r=await pool.query('insert into study_materials(department_code,stage_code,subject_name,title,doctor_name,file_path,storage_path,uploaded_by,page_count) values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning material_id',[department,stage,title,title,doctorName||'',stored.url,stored.storagePath,req.user.userId,pageCount]);res.json({success:true,message:'تمت إضافة الملف إلى الملازم',materialId:r.rows[0].material_id});}
   catch(e){await removeStored(stored.storagePath,stored.url);throw e;}
 });
 
@@ -462,9 +480,10 @@ app.get('/api/print-agent/next',printAgentAuth,async(req,res)=>{
 });
 app.post('/api/print-agent/jobs/:id/result',printAgentAuth,async(req,res)=>{
   const ok=Boolean(req.body.success),agentId=String(req.body.agentId||'library-main').slice(0,100),error=String(req.body.error||'').slice(0,1000);
-  const r=await pool.query(ok?`update student_print_files set direct_print_status='COMPLETED',status='COMPLETED',completed_at=now(),print_error=null,agent_id=$1 where file_id=$2 and direct_print_status='CLAIMED' returning file_id`:`update student_print_files set direct_print_status='FAILED',status='QUEUED',print_error=$1,agent_id=$2 where file_id=$3 and direct_print_status='CLAIMED' returning file_id`,ok?[agentId,req.params.id]:[error||'فشلت الطباعة',agentId,req.params.id]);
+  const r=await pool.query(ok?`with done as (update student_print_files set direct_print_status='COMPLETED',status='COMPLETED',completed_at=now(),print_error=null,agent_id=$1 where file_id=$2 and direct_print_status='CLAIMED' returning *) insert into print_history(file_id,printer_number,color_mode,page_count,copies,total_pages,agent_id) select file_id,printer_number,color_mode,coalesce(page_count,1),copies,coalesce(page_count,1)*copies,$1 from done returning file_id`:`update student_print_files set direct_print_status='FAILED',status='QUEUED',print_error=$1,agent_id=$2 where file_id=$3 and direct_print_status='CLAIMED' returning file_id`,ok?[agentId,req.params.id]:[error||'فشلت الطباعة',agentId,req.params.id]);
   res.json({success:Boolean(r.rowCount)});
 });
+app.get('/api/admin/print-stats',auth,admin,async(req,res)=>{const {from,to}=dateRange(req);const r=await pool.query(`select (printed_at at time zone 'Asia/Baghdad')::date day,sum(total_pages)::bigint total_pages,sum(case when color_mode='COLOR' then total_pages else 0 end)::bigint color_pages,sum(case when color_mode='BW' then total_pages else 0 end)::bigint bw_pages,count(*)::integer jobs from print_history where (printed_at at time zone 'Asia/Baghdad')::date between $1 and $2 group by 1 order by 1`,[from,to]);res.json({success:true,from,to,days:r.rows,totals:r.rows.reduce((a,x)=>({jobs:a.jobs+Number(x.jobs),pages:a.pages+Number(x.total_pages),color:a.color+Number(x.color_pages),bw:a.bw+Number(x.bw_pages)}),{jobs:0,pages:0,color:0,bw:0})})});
 app.get('/api/print-agent/health',printAgentAuth,(_req,res)=>res.json({success:true,server:true,time:new Date().toISOString()}));
 
 app.use((err,_req,res,_next)=>{ console.error(err); if(err instanceof multer.MulterError)return res.status(400).json({success:false,error:`حجم الملف يتجاوز ${MAX_UPLOAD_MB}MB`}); if(String(err.message||'').startsWith('نوع الملف غير مدعوم'))return res.status(400).json({success:false,error:err.message}); if(String(err.message||'').startsWith('فشل تخزين الملف'))return res.status(502).json({success:false,error:'تعذر تخزين الملف. تحقق من مساحة Supabase ونوع الملف المسموح'}); res.status(500).json({success:false,error:'حدث خطأ في الخادم',detail:process.env.NODE_ENV==='development'?err.message:undefined}); });
