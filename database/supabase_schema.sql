@@ -276,6 +276,16 @@ alter table if exists student_print_files add column if not exists claimed_at ti
 create index if not exists student_print_files_direct_queue_idx on student_print_files(direct_print_status,queued_at,created_at);
 -- الخادم يتصل بمفتاح service_role، ولا توجد سياسات وصول مباشر من المتصفح.
 
+create table if not exists telegram_sessions(chat_id bigint primary key,telegram_user_id bigint,username text,state text not null default 'AWAITING_NAME',data jsonb not null default '{}'::jsonb,updated_at timestamptz not null default now());
+alter table if exists student_print_files add column if not exists telegram_chat_id bigint;
+alter table if exists student_print_files add column if not exists telegram_user_id bigint;
+alter table if exists student_print_files add column if not exists estimated_price_iqd integer not null default 0;
+alter table if exists student_print_files add column if not exists payment_status text not null default 'UNPAID';
+alter table if exists student_print_files add column if not exists telegram_request_key text;
+create index if not exists student_print_files_telegram_idx on student_print_files(telegram_chat_id,created_at desc);
+create unique index if not exists student_print_files_telegram_request_key_uidx on student_print_files(telegram_request_key) where telegram_request_key is not null;
+alter table telegram_sessions enable row level security;
+
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values('library-files','library-files',true,52428800,array['application/pdf','image/jpeg','image/png','image/webp','image/heic','image/heif','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','audio/webm','audio/mp4','audio/mpeg','audio/ogg','audio/wav'])
 on conflict(id) do update set file_size_limit=excluded.file_size_limit, allowed_mime_types=excluded.allowed_mime_types;
