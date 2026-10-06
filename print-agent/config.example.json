@@ -1,0 +1,15 @@
+{
+  "serverUrl": "http://localhost:3001",
+  "agentId": "LAPTOP-VH2JKUMB",
+  "token": "ضع_هنا_PRINT_AGENT_TOKEN",
+  "pollSeconds": 5,
+  "enabled": false,
+  "printers": {
+    "1": "Canon iR-ADV 8285/8295 UFR II111111111111111",
+    "2": "Canon iR-ADV 6275 UFR II222222222222222222",
+    "3": "3333333333333333",
+    "5": "Canon iR-ADV C5235/5240 UFR II555555555555555",
+    "8": "Canon iR-ADV C7280 UFR II8888888888",
+    "9": "Canon iR-ADV 8585/8595 UFR II999999999"
+  }
+}
