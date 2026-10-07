@@ -308,6 +308,25 @@ app.post('/api/materials/print',async(req,res)=>{
   res.json({success:true,message:'تم إرسال طلب الطباعة إلى موظفي المكتبة',orderId:order.rows[0].file_id});
 });
 
+app.post('/api/materials/:id/direct-print',auth,async(req,res)=>{
+  const materialId=Number(req.params.id),settings=normalizePrintSettings(req.body),client=await pool.connect();
+  if(!Number.isInteger(materialId)||materialId<1){client.release();return res.status(400).json({success:false,error:'رقم الملزمة غير صحيح'});}
+  try{
+    await client.query('begin');
+    const material=await client.query('select material_id,title,file_path,page_count from study_materials where material_id=$1 for share',[materialId]);
+    if(!material.rowCount){await client.query('rollback');return res.status(404).json({success:false,error:'الملزمة غير موجودة'});}
+    let printerNumber=Number(req.body.printerNumber);
+    if(req.body.distribution==='AUTO'||!printerNumber)printerNumber=await leastBusyPrinter(client,settings.colorMode);
+    const allowed=ACTIVE_PRINTERS[settings.colorMode]||[];
+    if(!allowed.includes(printerNumber)){await client.query('rollback');return res.status(400).json({success:false,error:settings.colorMode==='COLOR'?'للطباعة الملونة اختر الطابعة 8 أو 5':'للأسود والأبيض اختر الطابعة 1 أو 2 أو 3 أو 9'});}
+    const m=material.rows[0];
+    const order=await client.query(`insert into student_print_files(original_name,file_path,storage_path,print_type,copies,color_mode,paper_size,duplex_mode,status,direct_print_status,printer_number,queued_by,queued_at,notes,page_count) values($1,$2,null,'DOCUMENT',$3,$4,$5,$6,'QUEUED','QUEUED',$7,$8,now(),'طباعة مباشرة من إدارة الملازم',$9) returning file_id`,[m.title,m.file_path,settings.copies,settings.colorMode,settings.paperSize,settings.duplexMode,printerNumber,req.user.userId,m.page_count]);
+    await client.query("insert into print_job_events(file_id,action,to_printer,details,performed_by) values($1,'MATERIAL_DIRECT_QUEUED',$2,$3,$4)",[order.rows[0].file_id,printerNumber,JSON.stringify({...settings,materialId}),req.user.userId]);
+    await client.query('commit');
+    res.json({success:true,orderId:order.rows[0].file_id,printerNumber,message:`تم إرسال الملزمة مباشرة إلى الطابعة رقم ${printerNumber}`});
+  }catch(e){await client.query('rollback');throw e;}finally{client.release();}
+});
+
 app.post('/upload-student-file',upload.array('files',20),async(req,res)=>{
   if(!configured(res))return;
   const files=req.files||[];
