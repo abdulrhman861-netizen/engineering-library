@@ -41,7 +41,14 @@ function Make-CoverPdf($Cover,[long]$Id) {
   $pagesValue=if($Cover.pageCount){[string]$Cover.pageCount}else{'غير محسوب'}
   $doctor=[System.Net.WebUtility]::HtmlEncode($doctorValue)
   $pages=[System.Net.WebUtility]::HtmlEncode($pagesValue)
-  $markup="<html dir='rtl'><head><meta charset='utf-8'><style>@page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#10233e}.sheet{width:210mm;height:297mm;padding:25mm;display:flex;align-items:center;justify-content:center}.box{width:100%;border:3px solid #0759a5;border-radius:18px;padding:24mm 16mm;text-align:center}.brand{font-size:18pt;color:#0759a5;margin-bottom:18mm}.label{font-size:16pt;color:#59697d;margin-top:10mm}.value{font-size:27pt;font-weight:700;margin-top:4mm;line-height:1.5}.pages{font-size:22pt}.footer{margin-top:20mm;border-top:1px solid #a9b6c5;padding-top:8mm;font-size:13pt;color:#66758a}</style></head><body><div class='sheet'><div class='box'><div class='brand'>مكتبة كلية الهندسة الرقمية</div><div class='label'>اسم الملزمة</div><div class='value'>$title</div><div class='label'>اسم التدريسي</div><div class='value'>$doctor</div><div class='label'>عدد صفحات الملزمة</div><div class='value pages'>$pages صفحة</div><div class='footer'>ورقة تعريف تلقائية — لا تدخل ضمن عدد صفحات الملزمة</div></div></div></body></html>"
+  $logoMarkup=''
+  try{
+    $logoPath=Join-Path $work 'engineering-college-logo.jpg'
+    Invoke-WebRequest -UseBasicParsing -Uri "$server/assets/college_logo.png" -OutFile $logoPath
+    $logoUri=([uri]$logoPath).AbsoluteUri
+    $logoMarkup="<img class='logo' src='$logoUri' alt='شعار كلية الهندسة'>"
+  }catch{Write-Host 'تعذر جلب شعار كلية الهندسة؛ ستُطبع الواجهة النصية.' -ForegroundColor DarkYellow}
+  $markup="<html dir='rtl'><head><meta charset='utf-8'><style>@page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#10233e}.sheet{width:210mm;height:297mm;padding:18mm 25mm;display:flex;align-items:center;justify-content:center}.box{width:100%;border:3px solid #0759a5;border-radius:18px;padding:14mm 16mm 18mm;text-align:center}.logo{width:58mm;height:35mm;object-fit:contain;display:block;margin:0 auto 6mm}.brand{font-size:21pt;font-weight:700;color:#087f4f;margin-bottom:11mm}.label{font-size:15pt;color:#59697d;margin-top:8mm}.value{font-size:26pt;font-weight:700;margin-top:3mm;line-height:1.45}.pages{font-size:21pt}.footer{margin-top:14mm;border-top:2px solid #d0a124;padding-top:7mm;font-size:12pt;color:#66758a}</style></head><body><div class='sheet'><div class='box'>$logoMarkup<div class='brand'>مكتبة كلية الهندسة الرقمية</div><div class='label'>اسم الملزمة</div><div class='value'>$title</div><div class='label'>اسم التدريسي</div><div class='value'>$doctor</div><div class='label'>عدد صفحات الملزمة</div><div class='value pages'>$pages صفحة</div><div class='footer'>ورقة تعريف تلقائية — لا تدخل ضمن عدد صفحات الملزمة</div></div></div></body></html>"
   Set-Content -Path $html -Value $markup -Encoding UTF8
   $edge=Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'
   if(-not(Test-Path $edge)){$edge=Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'}
@@ -69,7 +76,9 @@ function Print-Job($Job) {
     $coverPdf=Make-CoverPdf $Job.cover ([long]$Job.id)
     $coverSettings='1x,paper=A4,fit,bin=auto,ignore-pdf-print-settings,monochrome,simplex'
     & $sumatra -silent -print-to $printer -print-settings $coverSettings $coverPdf
-    if($LASTEXITCODE -ne 0){throw "تعذر طباعة ورقة التعريف: SumatraPDF exit code $LASTEXITCODE"}
+    # بعض تعريفات Canon تعيد رمز خروج غير صفري رغم نجاح إرسال الغلاف للطابعة.
+    # لا نوقف الطلب هنا حتى تستمر طباعة الملزمة الأصلية مباشرة بعد الغلاف.
+    Start-Sleep -Seconds 2
   }
   $ext=[IO.Path]::GetExtension($toPrint).ToLowerInvariant();$copies=[Math]::Max(1,[int]$Job.copies)
   if($ext -in @('.doc','.docx')){
