@@ -34,6 +34,23 @@ function Make-IdPdf([string]$Front,[string]$Back,[string]$Passport,[long]$Id) {
   if(-not(Test-Path $pdf)){throw 'تعذر تجهيز صفحة الهوية'}
   return $pdf
 }
+function Make-CoverPdf($Cover,[long]$Id) {
+  $html=Join-Path $work "$Id-cover.html";$pdf=Join-Path $work "$Id-cover.pdf"
+  $title=[System.Net.WebUtility]::HtmlEncode([string]$Cover.title)
+  $doctorValue=if([string]$Cover.doctorName){[string]$Cover.doctorName}else{'غير مذكور'}
+  $pagesValue=if($Cover.pageCount){[string]$Cover.pageCount}else{'غير محسوب'}
+  $doctor=[System.Net.WebUtility]::HtmlEncode($doctorValue)
+  $pages=[System.Net.WebUtility]::HtmlEncode($pagesValue)
+  $markup="<html dir='rtl'><head><meta charset='utf-8'><style>@page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#10233e}.sheet{width:210mm;height:297mm;padding:25mm;display:flex;align-items:center;justify-content:center}.box{width:100%;border:3px solid #0759a5;border-radius:18px;padding:24mm 16mm;text-align:center}.brand{font-size:18pt;color:#0759a5;margin-bottom:18mm}.label{font-size:16pt;color:#59697d;margin-top:10mm}.value{font-size:27pt;font-weight:700;margin-top:4mm;line-height:1.5}.pages{font-size:22pt}.footer{margin-top:20mm;border-top:1px solid #a9b6c5;padding-top:8mm;font-size:13pt;color:#66758a}</style></head><body><div class='sheet'><div class='box'><div class='brand'>مكتبة كلية الهندسة الرقمية</div><div class='label'>اسم الملزمة</div><div class='value'>$title</div><div class='label'>اسم التدريسي</div><div class='value'>$doctor</div><div class='label'>عدد صفحات الملزمة</div><div class='value pages'>$pages صفحة</div><div class='footer'>ورقة تعريف تلقائية — لا تدخل ضمن عدد صفحات الملزمة</div></div></div></body></html>"
+  Set-Content -Path $html -Value $markup -Encoding UTF8
+  $edge=Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'
+  if(-not(Test-Path $edge)){$edge=Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'}
+  if(-not(Test-Path $edge)){throw 'Microsoft Edge غير موجود لتجهيز ورقة التعريف'}
+  if(Test-Path $pdf){Remove-Item $pdf -Force}
+  Start-Process -FilePath $edge -ArgumentList '--headless','--disable-gpu','--no-pdf-header-footer',"--print-to-pdf=$pdf",([uri]$html).AbsoluteUri -Wait
+  if(-not(Test-Path $pdf)){throw 'تعذر تجهيز ورقة تعريف الملزمة'}
+  return $pdf
+}
 function Print-Job($Job) {
   $printerProperty=$config.printers.PSObject.Properties[[string]$Job.printerNumber]
   if(-not $printerProperty){throw "الطابعة رقم $($Job.printerNumber) غير معرفة"}
@@ -47,6 +64,12 @@ function Print-Job($Job) {
     $third=$null
     if($Job.thirdUrl){$third=Download-JobFile ([string]$Job.thirdUrl) ("$($Job.id)-3")}
     $toPrint=Make-IdPdf $first $second $third ([long]$Job.id)
+  }
+  if($Job.cover -and [bool]$Job.cover.enabled){
+    $coverPdf=Make-CoverPdf $Job.cover ([long]$Job.id)
+    $coverSettings='1x,paper=A4,fit,bin=auto,ignore-pdf-print-settings,monochrome,simplex'
+    & $sumatra -silent -print-to $printer -print-settings $coverSettings $coverPdf
+    if($LASTEXITCODE -ne 0){throw "تعذر طباعة ورقة التعريف: SumatraPDF exit code $LASTEXITCODE"}
   }
   $ext=[IO.Path]::GetExtension($toPrint).ToLowerInvariant();$copies=[Math]::Max(1,[int]$Job.copies)
   if($ext -in @('.doc','.docx')){

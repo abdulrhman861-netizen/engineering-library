@@ -298,13 +298,14 @@ app.post('/api/materials/print',async(req,res)=>{
   if(!configured(res))return;
   const materialId=Number(req.body.materialId);
   if(!Number.isInteger(materialId)||materialId<1)return res.status(400).json({success:false,error:'رقم الملزمة غير صحيح'});
-  const material=await pool.query('select title,file_path,page_count from study_materials where material_id=$1',[materialId]);
+  const material=await pool.query('select title,doctor_name,file_path,page_count from study_materials where material_id=$1',[materialId]);
   if(!material.rowCount)return res.status(404).json({success:false,error:'الملزمة غير موجودة'});
   const item=material.rows[0];
   const order=await pool.query(
     "insert into student_print_files(original_name,file_path,storage_path,copies,color_mode,student_name,phone,notes,page_count) values($1,$2,null,$3,$4,$5,$6,'طلب طباعة ملزمة من المكتبة الرقمية',$7) returning file_id",
     [item.title,item.file_path,Math.max(1,Number(req.body.copies||1)),req.body.colorMode==='COLOR'?'COLOR':'BW',String(req.body.studentName||'').trim(),String(req.body.phone||'').trim(),item.page_count]
   );
+  await pool.query("insert into print_job_events(file_id,action,details) values($1,'MATERIAL_REQUESTED',$2)",[order.rows[0].file_id,JSON.stringify({materialId,printCover:true,title:item.title,doctorName:item.doctor_name||'',pageCount:item.page_count||null})]);
   res.json({success:true,message:'تم إرسال طلب الطباعة إلى موظفي المكتبة',orderId:order.rows[0].file_id});
 });
 
@@ -313,7 +314,7 @@ app.post('/api/materials/:id/direct-print',auth,async(req,res)=>{
   if(!Number.isInteger(materialId)||materialId<1){client.release();return res.status(400).json({success:false,error:'رقم الملزمة غير صحيح'});}
   try{
     await client.query('begin');
-    const material=await client.query('select material_id,title,file_path,page_count from study_materials where material_id=$1 for share',[materialId]);
+    const material=await client.query('select material_id,title,doctor_name,file_path,page_count from study_materials where material_id=$1 for share',[materialId]);
     if(!material.rowCount){await client.query('rollback');return res.status(404).json({success:false,error:'الملزمة غير موجودة'});}
     let printerNumber=Number(req.body.printerNumber);
     if(req.body.distribution==='AUTO'||!printerNumber)printerNumber=await leastBusyPrinter(client,settings.colorMode);
@@ -321,7 +322,7 @@ app.post('/api/materials/:id/direct-print',auth,async(req,res)=>{
     if(!allowed.includes(printerNumber)){await client.query('rollback');return res.status(400).json({success:false,error:settings.colorMode==='COLOR'?'للطباعة الملونة اختر الطابعة 8 أو 5':'للأسود والأبيض اختر الطابعة 1 أو 2 أو 3 أو 9'});}
     const m=material.rows[0];
     const order=await client.query(`insert into student_print_files(original_name,file_path,storage_path,print_type,copies,color_mode,paper_size,duplex_mode,status,direct_print_status,printer_number,queued_by,queued_at,notes,page_count) values($1,$2,null,'DOCUMENT',$3,$4,$5,$6,'QUEUED','QUEUED',$7,$8,now(),'طباعة مباشرة من إدارة الملازم',$9) returning file_id`,[m.title,m.file_path,settings.copies,settings.colorMode,settings.paperSize,settings.duplexMode,printerNumber,req.user.userId,m.page_count]);
-    await client.query("insert into print_job_events(file_id,action,to_printer,details,performed_by) values($1,'MATERIAL_DIRECT_QUEUED',$2,$3,$4)",[order.rows[0].file_id,printerNumber,JSON.stringify({...settings,materialId}),req.user.userId]);
+    await client.query("insert into print_job_events(file_id,action,to_printer,details,performed_by) values($1,'MATERIAL_DIRECT_QUEUED',$2,$3,$4)",[order.rows[0].file_id,printerNumber,JSON.stringify({...settings,materialId,printCover:req.body.printCover!==false,title:m.title,doctorName:m.doctor_name||'',pageCount:m.page_count||null}),req.user.userId]);
     await client.query('commit');
     res.json({success:true,orderId:order.rows[0].file_id,printerNumber,message:`تم إرسال الملزمة مباشرة إلى الطابعة رقم ${printerNumber}`});
   }catch(e){await client.query('rollback');throw e;}finally{client.release();}
@@ -353,7 +354,7 @@ app.post('/upload-student-file',upload.array('files',20),async(req,res)=>{
   }
   res.json({success:true,message:`تم إرسال ${created.length} طلب للطباعة`,orderIds:created});
 });
-app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query(`select f.file_id as id,f.original_name as "originalName",f.file_path as url,f.second_file_path as "secondUrl",f.third_file_path as "thirdUrl",f.print_type as "printType",f.copies,f.color_mode,f.page_count as "pageCount",f.paper_size as "paperSize",f.duplex_mode as "duplexMode",f.status,f.student_name,f.phone,f.notes,f.created_at as time,f.direct_print_status as "directPrintStatus",f.printer_number as "printerNumber",f.print_error as "printError",f.telegram_chat_id as "telegramChatId",f.estimated_price_iqd as "estimatedPriceIqd",f.payment_status as "paymentStatus",q.full_name as "queuedByName",c.full_name as "completedByName",x.full_name as "cancelledByName" from student_print_files f left join users q on q.user_id=f.queued_by left join users c on c.user_id=f.completed_by left join users x on x.user_id=f.cancelled_by where f.status<>'CANCELLED' and f.archived_at is null order by f.created_at desc limit 200`); res.json(r.rows); });
+app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query(`select f.file_id as id,f.original_name as "originalName",f.file_path as url,f.second_file_path as "secondUrl",f.third_file_path as "thirdUrl",f.print_type as "printType",f.copies,f.color_mode,f.page_count as "pageCount",f.paper_size as "paperSize",f.duplex_mode as "duplexMode",f.status,f.student_name,f.phone,f.notes,f.created_at as time,f.direct_print_status as "directPrintStatus",f.printer_number as "printerNumber",f.print_error as "printError",f.telegram_chat_id as "telegramChatId",f.estimated_price_iqd as "estimatedPriceIqd",f.payment_status as "paymentStatus",q.full_name as "queuedByName",c.full_name as "completedByName",x.full_name as "cancelledByName" from student_print_files f left join users q on q.user_id=f.queued_by left join users c on c.user_id=f.completed_by left join users x on x.user_id=f.cancelled_by where f.status<>'CANCELLED' and f.archived_at is null order by f.created_at desc limit 1000`); res.json(r.rows); });
 app.get('/api/student-files/:id',auth,async(req,res)=>{const r=await pool.query('select file_id as id,original_name as "originalName",file_path as url,second_file_path as "secondUrl",print_type as "printType",copies,color_mode,student_name,phone,notes from student_print_files where file_id=$1',[req.params.id]);if(!r.rowCount)return res.status(404).json({success:false,error:'الطلب غير موجود'});res.json(r.rows[0]);});
 app.patch('/api/student-files/:id/status',auth,async(req,res)=>{ const status=['QUEUED','PRINTING','COMPLETED','CANCELLED'].includes(req.body.status)?req.body.status:'QUEUED'; await pool.query("update student_print_files set status=$1,completed_by=case when $1='COMPLETED' then $2 else completed_by end,completed_at=case when $1='COMPLETED' then now() else completed_at end where file_id=$3",[status,req.user.userId,req.params.id]); res.json({success:true}); });
 app.post('/api/student-files/:id/direct-print',auth,async(req,res)=>{
@@ -368,7 +369,25 @@ app.post('/api/student-files/:id/cancel-direct',auth,async(req,res)=>{
   res.json({success:true,message:'تم إلغاء أمر الطباعة المباشرة'});
 });
 app.get('/api/student-files/:id/events',auth,async(req,res)=>{const r=await pool.query(`select e.*,u.full_name performed_by_name from print_job_events e left join users u on u.user_id=e.performed_by where e.file_id=$1 order by e.created_at`,[req.params.id]);res.json({success:true,events:r.rows});});
-app.delete('/api/student-files/:id',auth,async(req,res)=>{ const r=await pool.query('delete from student_print_files where file_id=$1 returning storage_path,file_path,second_storage_path,second_file_path,third_storage_path,third_file_path',[req.params.id]); if(r.rowCount){await removeStored(r.rows[0].storage_path,r.rows[0].file_path);await removeStored(r.rows[0].second_storage_path,r.rows[0].second_file_path);await removeStored(r.rows[0].third_storage_path,r.rows[0].third_file_path);} res.json({success:true}); });
+app.post('/api/student-files/bulk-delete',auth,async(req,res)=>{
+  const removeAll=Boolean(req.body.all);
+  if(removeAll&&req.user.role!=='ADMIN')return res.status(403).json({success:false,error:'حذف جميع الملفات متاح للمدير فقط'});
+  const ids=[...new Set((Array.isArray(req.body.ids)?req.body.ids:[]).map(Number).filter(Number.isInteger))].slice(0,500);
+  if(!removeAll&&!ids.length)return res.status(400).json({success:false,error:'حدد ملفاً واحداً على الأقل'});
+  const client=await pool.connect();let rows=[];
+  try{
+    await client.query('begin');
+    const result=removeAll
+      ?await client.query("delete from student_print_files where archived_at is null and direct_print_status<>'CLAIMED' returning file_id,source_task_attachment_id,storage_path,file_path,second_storage_path,second_file_path,third_storage_path,third_file_path")
+      :await client.query("delete from student_print_files where file_id=any($1::bigint[]) and direct_print_status<>'CLAIMED' returning file_id,source_task_attachment_id,storage_path,file_path,second_storage_path,second_file_path,third_storage_path,third_file_path",[ids]);
+    rows=result.rows;
+    await client.query('commit');
+  }catch(e){await client.query('rollback');throw e;}finally{client.release();}
+  for(const x of rows){if(!x.source_task_attachment_id){await removeStored(x.storage_path,x.file_path);await removeStored(x.second_storage_path,x.second_file_path);await removeStored(x.third_storage_path,x.third_file_path);}}
+  const skipped=removeAll?0:Math.max(0,ids.length-rows.length);
+  res.json({success:true,deleted:rows.length,skipped,message:`تم حذف ${rows.length} ملف${skipped?`، وتعذر حذف ${skipped} لأنه قيد الطباعة أو غير موجود`:''}`});
+});
+app.delete('/api/student-files/:id',auth,async(req,res)=>{ const r=await pool.query("delete from student_print_files where file_id=$1 and direct_print_status<>'CLAIMED' returning source_task_attachment_id,storage_path,file_path,second_storage_path,second_file_path,third_storage_path,third_file_path",[req.params.id]); if(!r.rowCount)return res.status(409).json({success:false,error:'لا يمكن حذف ملف قيد الطباعة'});if(!r.rows[0].source_task_attachment_id){await removeStored(r.rows[0].storage_path,r.rows[0].file_path);await removeStored(r.rows[0].second_storage_path,r.rows[0].second_file_path);await removeStored(r.rows[0].third_storage_path,r.rows[0].third_file_path);}res.json({success:true}); });
 app.post('/api/student-files/:id/promote-to-material',auth,async(req,res)=>{
   const {title,doctorName,department,stage}=req.body;
   if(!title||!department||!stage)return res.status(400).json({success:false,error:'اسم الملزمة والقسم والمرحلة مطلوبة'});
@@ -571,12 +590,17 @@ app.get('/api/print-agent/next',printAgentAuth,async(req,res)=>{
   const agentId=String(req.query.agentId||'library-main').slice(0,100),client=await pool.connect();
   try{
     await client.query('begin');
-    const r=await client.query(`select file_id,original_name,file_path,second_file_path,third_file_path,print_type,copies,color_mode,paper_size,duplex_mode,printer_number,notes from student_print_files where direct_print_status='QUEUED' and status<>'CANCELLED' order by queued_at nulls last,created_at for update skip locked limit 1`);
+    const r=await client.query(`select f.file_id,f.original_name,f.file_path,f.second_file_path,f.third_file_path,f.print_type,f.copies,f.color_mode,f.paper_size,f.duplex_mode,f.printer_number,f.notes,f.page_count,cover.details cover_details
+      from student_print_files f
+      left join lateral(select e.details from print_job_events e where e.file_id=f.file_id and e.action in ('MATERIAL_DIRECT_QUEUED','MATERIAL_REQUESTED') order by e.created_at desc limit 1) cover on true
+      where f.direct_print_status='QUEUED' and f.status<>'CANCELLED'
+      order by f.queued_at nulls last,f.created_at for update of f skip locked limit 1`);
     if(!r.rowCount){await client.query('commit');return res.status(204).end();}
     const job=r.rows[0];
     await client.query("update student_print_files set direct_print_status='CLAIMED',status='PRINTING',claimed_at=now(),agent_id=$1 where file_id=$2",[agentId,job.file_id]);
     await client.query('commit');
-    res.json({success:true,job:{id:job.file_id,originalName:job.original_name,url:job.file_path,secondUrl:job.second_file_path,thirdUrl:job.third_file_path,printType:job.print_type,copies:job.copies,colorMode:job.color_mode,paperSize:job.paper_size,duplexMode:job.duplex_mode,printerNumber:job.printer_number,notes:job.notes}});
+    const cover=job.cover_details&&job.cover_details.printCover!==false?{enabled:true,title:job.cover_details.title||job.original_name,doctorName:job.cover_details.doctorName||'',pageCount:job.cover_details.pageCount||job.page_count||null}:null;
+    res.json({success:true,job:{id:job.file_id,originalName:job.original_name,url:job.file_path,secondUrl:job.second_file_path,thirdUrl:job.third_file_path,printType:job.print_type,copies:job.copies,colorMode:job.color_mode,paperSize:job.paper_size,duplexMode:job.duplex_mode,printerNumber:job.printer_number,notes:job.notes,cover}});
   }catch(e){await client.query('rollback');throw e;}finally{client.release();}
 });
 app.post('/api/print-agent/jobs/:id/result',printAgentAuth,async(req,res)=>{
