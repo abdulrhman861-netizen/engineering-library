@@ -11,8 +11,8 @@ if (-not (Test-Path $sumatra)) { throw 'SumatraPDF غير مثبت' }
 $work = Join-Path $env:ProgramData 'EngineeringLibrary\PrintAgent'
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 
-function Send-Result([long]$Id,[bool]$Success,[string]$Message='') {
-  $body = @{success=$Success;error=$Message;agentId=[string]$config.agentId} | ConvertTo-Json
+function Send-Result([long]$Id,[bool]$Success,[string]$Message='',[int]$PageCount=0,[long]$MaterialId=0) {
+  $body = @{success=$Success;error=$Message;agentId=[string]$config.agentId;pageCount=$PageCount;materialId=$MaterialId} | ConvertTo-Json
   Invoke-RestMethod -Method Post -Uri "$server/api/print-agent/jobs/$Id/result" -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
 }
 function Download-JobFile([string]$Url,[string]$BaseName) {
@@ -31,6 +31,7 @@ function Convert-WordToPdf([string]$WordPath,[long]$Id) {
     $word.DisplayAlerts=0
     $doc=$word.Documents.Open($WordPath,$false,$true)
     # wdExportFormatPDF = 17. نحافظ على ملف Word الأصلي وننشئ PDF مؤقتاً للطباعة فقط.
+    $pageCount=[int]$doc.ComputeStatistics(2)
     $doc.ExportAsFixedFormat($pdf,17)
   }catch{
     throw "تعذر تحويل ملف Word إلى PDF. تأكد من تثبيت Microsoft Word: $($_.Exception.Message)"
@@ -42,7 +43,7 @@ function Convert-WordToPdf([string]$WordPath,[long]$Id) {
     [GC]::Collect();[GC]::WaitForPendingFinalizers()
   }
   if(-not(Test-Path $pdf) -or (Get-Item $pdf).Length -lt 100){throw 'تم تشغيل Word لكن لم يتم إنشاء ملف PDF صالح'}
-  return $pdf
+  return [PSCustomObject]@{Path=$pdf;PageCount=[Math]::Max(1,$pageCount)}
 }
 function Make-IdPdf([string]$Front,[string]$Back,[string]$Passport,[long]$Id) {
   $html=Join-Path $work "$Id-id.html";$pdf=Join-Path $work "$Id-id.pdf"
@@ -95,6 +96,14 @@ function Print-Job($Job) {
     if($Job.thirdUrl){$third=Download-JobFile ([string]$Job.thirdUrl) ("$($Job.id)-3")}
     $toPrint=Make-IdPdf $first $second $third ([long]$Job.id)
   }
+  $calculatedPages=0
+  $ext=[IO.Path]::GetExtension($toPrint).ToLowerInvariant();$copies=[Math]::Max(1,[int]$Job.copies)
+  if($ext -in @('.doc','.docx')){
+    $converted=Convert-WordToPdf $toPrint ([long]$Job.id)
+    $toPrint=[string]$converted.Path
+    $calculatedPages=[int]$converted.PageCount
+    if($Job.cover){$Job.cover.pageCount=$calculatedPages}
+  }
   if($Job.cover -and [bool]$Job.cover.enabled){
     $coverPdf=Make-CoverPdf $Job.cover ([long]$Job.id)
     $coverSettings='1x,paper=A4,fit,bin=auto,ignore-pdf-print-settings,monochrome,simplex'
@@ -103,14 +112,13 @@ function Print-Job($Job) {
     # لا نوقف الطلب هنا حتى تستمر طباعة الملزمة الأصلية مباشرة بعد الغلاف.
     Start-Sleep -Seconds 2
   }
-  $ext=[IO.Path]::GetExtension($toPrint).ToLowerInvariant();$copies=[Math]::Max(1,[int]$Job.copies)
-  if($ext -in @('.doc','.docx')){$toPrint=Convert-WordToPdf $toPrint ([long]$Job.id)}
   $colorSetting=if($Job.colorMode -eq 'COLOR'){'color'}else{'monochrome'}
   $paperSetting=if($Job.paperSize -eq 'A3'){'paper=A3'}else{'paper=A4'}
   $duplexSetting=switch([string]$Job.duplexMode){'DUPLEX_LONG'{'duplexlong'}'DUPLEX_SHORT'{'duplexshort'}default{'simplex'}}
   $printSettings=("{0}x,{1},fit,bin=auto,ignore-pdf-print-settings,{2},{3}" -f $copies,$paperSetting,$colorSetting,$duplexSetting)
   & $sumatra -silent -print-to $printer -print-settings $printSettings $toPrint
   if($LASTEXITCODE -ne 0){throw "SumatraPDF exit code $LASTEXITCODE"}
+  return [PSCustomObject]@{PageCount=$calculatedPages;MaterialId=[long]$Job.materialId}
 }
 
 Write-Host "وكيل طباعة مكتبة الهندسة — $($config.agentId)" -ForegroundColor Cyan
@@ -121,7 +129,7 @@ while($true){
     if($response.StatusCode -eq 200 -and $response.Content){
       $payload=$response.Content|ConvertFrom-Json;$job=$payload.job
       Write-Host "طباعة الطلب $($job.id) على الطابعة $($job.printerNumber)..."
-      try{Print-Job $job;Send-Result ([long]$job.id) $true;Write-Host 'تمت الطباعة بنجاح' -ForegroundColor Green}
+      try{$printResult=Print-Job $job;Send-Result ([long]$job.id) $true '' ([int]$printResult.PageCount) ([long]$printResult.MaterialId);Write-Host 'تمت الطباعة بنجاح' -ForegroundColor Green}
       catch{Send-Result ([long]$job.id) $false $_.Exception.Message;Write-Host $_.Exception.Message -ForegroundColor Red}
     }
   }catch{
