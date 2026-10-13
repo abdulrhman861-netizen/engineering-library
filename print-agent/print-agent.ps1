@@ -21,6 +21,29 @@ function Download-JobFile([string]$Url,[string]$BaseName) {
   Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $target
   return $target
 }
+function Convert-WordToPdf([string]$WordPath,[long]$Id) {
+  $pdf=Join-Path $work "$Id-word.pdf"
+  if(Test-Path $pdf){Remove-Item $pdf -Force}
+  $word=$null;$doc=$null
+  try{
+    $word=New-Object -ComObject Word.Application
+    $word.Visible=$false
+    $word.DisplayAlerts=0
+    $doc=$word.Documents.Open($WordPath,$false,$true)
+    # wdExportFormatPDF = 17. نحافظ على ملف Word الأصلي وننشئ PDF مؤقتاً للطباعة فقط.
+    $doc.ExportAsFixedFormat($pdf,17)
+  }catch{
+    throw "تعذر تحويل ملف Word إلى PDF. تأكد من تثبيت Microsoft Word: $($_.Exception.Message)"
+  }finally{
+    if($doc){$doc.Close($false)}
+    if($word){$word.Quit()}
+    if($doc){[void][Runtime.InteropServices.Marshal]::ReleaseComObject($doc)}
+    if($word){[void][Runtime.InteropServices.Marshal]::ReleaseComObject($word)}
+    [GC]::Collect();[GC]::WaitForPendingFinalizers()
+  }
+  if(-not(Test-Path $pdf) -or (Get-Item $pdf).Length -lt 100){throw 'تم تشغيل Word لكن لم يتم إنشاء ملف PDF صالح'}
+  return $pdf
+}
 function Make-IdPdf([string]$Front,[string]$Back,[string]$Passport,[long]$Id) {
   $html=Join-Path $work "$Id-id.html";$pdf=Join-Path $work "$Id-id.pdf"
   $frontUri=([uri]$Front).AbsoluteUri;$backUri=([uri]$Back).AbsoluteUri;$passportMarkup=''
@@ -81,17 +104,13 @@ function Print-Job($Job) {
     Start-Sleep -Seconds 2
   }
   $ext=[IO.Path]::GetExtension($toPrint).ToLowerInvariant();$copies=[Math]::Max(1,[int]$Job.copies)
-  if($ext -in @('.doc','.docx')){
-    $word=New-Object -ComObject Word.Application
-    try{$word.Visible=$false;$word.DisplayAlerts=0;$doc=$word.Documents.Open($toPrint,$false,$true);$word.ActivePrinter=$printer;$doc.PrintOut($false,$false,0,'','',$null,0,$copies);$doc.Close($false)}finally{$word.Quit()}
-  }else{
-    $colorSetting=if($Job.colorMode -eq 'COLOR'){'color'}else{'monochrome'}
-    $paperSetting=if($Job.paperSize -eq 'A3'){'paper=A3'}else{'paper=A4'}
-    $duplexSetting=switch([string]$Job.duplexMode){'DUPLEX_LONG'{'duplexlong'}'DUPLEX_SHORT'{'duplexshort'}default{'simplex'}}
-    $printSettings=("{0}x,{1},fit,bin=auto,ignore-pdf-print-settings,{2},{3}" -f $copies,$paperSetting,$colorSetting,$duplexSetting)
-    & $sumatra -silent -print-to $printer -print-settings $printSettings $toPrint
-    if($LASTEXITCODE -ne 0){throw "SumatraPDF exit code $LASTEXITCODE"}
-  }
+  if($ext -in @('.doc','.docx')){$toPrint=Convert-WordToPdf $toPrint ([long]$Job.id)}
+  $colorSetting=if($Job.colorMode -eq 'COLOR'){'color'}else{'monochrome'}
+  $paperSetting=if($Job.paperSize -eq 'A3'){'paper=A3'}else{'paper=A4'}
+  $duplexSetting=switch([string]$Job.duplexMode){'DUPLEX_LONG'{'duplexlong'}'DUPLEX_SHORT'{'duplexshort'}default{'simplex'}}
+  $printSettings=("{0}x,{1},fit,bin=auto,ignore-pdf-print-settings,{2},{3}" -f $copies,$paperSetting,$colorSetting,$duplexSetting)
+  & $sumatra -silent -print-to $printer -print-settings $printSettings $toPrint
+  if($LASTEXITCODE -ne 0){throw "SumatraPDF exit code $LASTEXITCODE"}
 }
 
 Write-Host "وكيل طباعة مكتبة الهندسة — $($config.agentId)" -ForegroundColor Cyan
