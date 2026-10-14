@@ -10,6 +10,69 @@ if (-not (Test-Path $sumatra)) { $sumatra = Join-Path $env:ProgramFiles 'Sumatra
 if (-not (Test-Path $sumatra)) { throw 'SumatraPDF غير مثبت' }
 $work = Join-Path $env:ProgramData 'EngineeringLibrary\PrintAgent'
 New-Item -ItemType Directory -Path $work -Force | Out-Null
+$materialsRoot=if([string]$config.materialsRoot){[string]$config.materialsRoot}else{'D:\EngineeringLibrary\Materials'}
+$materialSyncMinutes=if([int]$config.materialSyncMinutes -gt 0){[int]$config.materialSyncMinutes}else{5}
+New-Item -ItemType Directory -Path $materialsRoot -Force|Out-Null
+$materialIndexPath=Join-Path $materialsRoot 'materials-index.json'
+$materialIndex=@{}
+if(Test-Path $materialIndexPath){
+  try{foreach($entry in @((Get-Content $materialIndexPath -Raw|ConvertFrom-Json))){$materialIndex[[string]$entry.materialId]=$entry}}catch{Write-Host 'تعذر قراءة فهرس الملازم المحلي؛ سيعاد بناؤه.' -ForegroundColor Yellow}
+}
+
+function Safe-Part([string]$Value,[string]$Fallback='غير مصنف'){
+  $clean=($Value -replace '[<>:"/\\|?*]','-' -replace '\s+',' ').Trim().TrimEnd('.')
+  if(-not $clean){$clean=$Fallback}
+  if($clean.Length -gt 90){$clean=$clean.Substring(0,90).Trim()}
+  return $clean
+}
+function Material-Extension($Material){
+  try{$ext=[IO.Path]::GetExtension(([uri][string]$Material.url).AbsolutePath)}catch{$ext=''}
+  if($ext){return $ext.ToLowerInvariant()}
+  $mime=[string]$Material.mimeType
+  if($mime -like '*wordprocessingml*'){return '.docx'}
+  if($mime -like '*msword*'){return '.doc'}
+  if($mime -like '*pdf*'){return '.pdf'}
+  if($mime -like 'image/png*'){return '.png'}
+  return '.jpg'
+}
+function Save-MaterialIndex(){
+  @($materialIndex.Values)|Sort-Object {[long]$_.materialId}|ConvertTo-Json -Depth 5|Set-Content $materialIndexPath -Encoding UTF8
+}
+function Sync-Materials([int]$MaxDownloads=10){
+  $catalog=Invoke-RestMethod -Uri "$server/api/print-agent/materials-catalog" -Headers $headers
+  $downloaded=0
+  foreach($m in @($catalog.materials)){
+    $key=[string]$m.materialId;$known=$materialIndex[$key]
+    if($known -and $known.url -eq $m.url -and (Test-Path ([string]$known.path))){continue}
+    if($downloaded -ge $MaxDownloads){break}
+    $department=Safe-Part ([string]$m.departmentName) ([string]$m.departmentCode)
+    $stage=Safe-Part ([string]$m.stageName) ([string]$m.stageCode)
+    $number=if($m.materialNumber){'{0:D4}' -f [int]$m.materialNumber}else{'0000'}
+    $fileName=Safe-Part "$number - $([string]$m.title)" 'ملزمة'
+    $folder=Join-Path (Join-Path $materialsRoot $department) $stage
+    New-Item -ItemType Directory -Path $folder -Force|Out-Null
+    $target=Join-Path $folder ($fileName+(Material-Extension $m));$temp="$target.download"
+    Write-Host "مزامنة الملزمة #$($m.materialId): $($m.title)..." -ForegroundColor Cyan
+    Invoke-WebRequest -UseBasicParsing -Uri ([string]$m.url) -OutFile $temp
+    if((Get-Item $temp).Length -lt 1){Remove-Item $temp -Force;throw "ملف الملزمة #$($m.materialId) فارغ"}
+    $hash=(Get-FileHash $temp -Algorithm SHA256).Hash
+    Move-Item $temp $target -Force
+    $materialIndex[$key]=[PSCustomObject]@{materialId=[long]$m.materialId;url=[string]$m.url;path=$target;sha256=$hash;size=(Get-Item $target).Length;syncedAt=(Get-Date).ToString('o')}
+    Save-MaterialIndex
+    $downloaded++
+  }
+  if($downloaded){Write-Host "تمت مزامنة $downloaded ملزمة إلى $materialsRoot" -ForegroundColor Green}
+}
+function Get-LocalMaterial([long]$MaterialId){
+  if($MaterialId -le 0){return $null}
+  $entry=$materialIndex[[string]$MaterialId]
+  if($entry -and (Test-Path ([string]$entry.path))){
+    $actual=(Get-FileHash ([string]$entry.path) -Algorithm SHA256).Hash
+    if($actual -eq [string]$entry.sha256){return [string]$entry.path}
+    Write-Host "فشل فحص سلامة النسخة المحلية للملزمة #$MaterialId؛ سيتم تنزيلها من السحابة." -ForegroundColor Yellow
+  }
+  return $null
+}
 
 function Send-Result([long]$Id,[bool]$Success,[string]$Message='',[int]$PageCount=0,[long]$MaterialId=0) {
   $body = @{success=$Success;error=$Message;agentId=[string]$config.agentId;pageCount=$PageCount;materialId=$MaterialId} | ConvertTo-Json
@@ -24,25 +87,21 @@ function Download-JobFile([string]$Url,[string]$BaseName) {
 function Convert-WordToPdf([string]$WordPath,[long]$Id) {
   $pdf=Join-Path $work "$Id-word.pdf"
   if(Test-Path $pdf){Remove-Item $pdf -Force}
-  $word=$null;$doc=$null
-  try{
-    $word=New-Object -ComObject Word.Application
-    $word.Visible=$false
-    $word.DisplayAlerts=0
-    $doc=$word.Documents.Open($WordPath,$false,$true)
-    # wdExportFormatPDF = 17. نحافظ على ملف Word الأصلي وننشئ PDF مؤقتاً للطباعة فقط.
-    $pageCount=[int]$doc.ComputeStatistics(2)
-    $doc.ExportAsFixedFormat($pdf,17)
-  }catch{
-    throw "تعذر تحويل ملف Word إلى PDF. تأكد من تثبيت Microsoft Word: $($_.Exception.Message)"
-  }finally{
-    if($doc){$doc.Close($false)}
-    if($word){$word.Quit()}
-    if($doc){[void][Runtime.InteropServices.Marshal]::ReleaseComObject($doc)}
-    if($word){[void][Runtime.InteropServices.Marshal]::ReleaseComObject($word)}
-    [GC]::Collect();[GC]::WaitForPendingFinalizers()
-  }
-  if(-not(Test-Path $pdf) -or (Get-Item $pdf).Length -lt 100){throw 'تم تشغيل Word لكن لم يتم إنشاء ملف PDF صالح'}
+  $soffice=Join-Path $env:ProgramFiles 'LibreOffice\program\soffice.com'
+  if(-not(Test-Path $soffice)){$soffice=Join-Path ${env:ProgramFiles(x86)} 'LibreOffice\program\soffice.com'}
+  if(-not(Test-Path $soffice)){throw 'LibreOffice غير مثبت. ثبته مرة واحدة حتى تعمل طباعة ملفات Word تلقائياً'}
+  $profile=Join-Path $work "LibreOfficeProfile-$Id"
+  New-Item -ItemType Directory -Path $profile -Force|Out-Null
+  $profileUri=([uri]$profile).AbsoluteUri
+  $generated=[IO.Path]::ChangeExtension($WordPath,'.pdf')
+  if(Test-Path $generated){Remove-Item $generated -Force}
+  & $soffice "-env:UserInstallation=$profileUri" '--headless' '--nologo' '--nodefault' '--nolockcheck' '--convert-to' 'pdf:writer_pdf_Export' '--outdir' $work $WordPath|Out-Null
+  if($LASTEXITCODE -ne 0 -or -not(Test-Path $generated)){throw "فشل LibreOffice في تحويل Word إلى PDF (exit code $LASTEXITCODE)"}
+  Move-Item $generated $pdf -Force
+  if((Get-Item $pdf).Length -lt 100){throw 'أنشأ LibreOffice ملف PDF غير صالح'}
+  # ملفات PDF الناتجة من LibreOffice تحفظ كائن صفحة واضحاً لكل صفحة.
+  $ascii=[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($pdf))
+  $pageCount=[regex]::Matches($ascii,'/Type\s*/Page(?!s)\b').Count
   return [PSCustomObject]@{Path=$pdf;PageCount=[Math]::Max(1,$pageCount)}
 }
 function Make-IdPdf([string]$Front,[string]$Back,[string]$Passport,[long]$Id) {
@@ -87,7 +146,8 @@ function Print-Job($Job) {
   if(-not $printerProperty){throw "الطابعة رقم $($Job.printerNumber) غير معرفة"}
   $printer=[string]$printerProperty.Value
   if(-not(Get-Printer -Name $printer -ErrorAction SilentlyContinue)){throw "الطابعة غير مثبتة في Windows: $printer"}
-  $first=Download-JobFile ([string]$Job.url) ("$($Job.id)-1")
+  $first=Get-LocalMaterial ([long]$Job.materialId)
+  if($first){Write-Host "استخدام النسخة المحلية: $first" -ForegroundColor Green}else{$first=Download-JobFile ([string]$Job.url) ("$($Job.id)-1")}
   $toPrint=$first
   if($Job.printType -in @('ID_CARD','ID_PASSPORT')){
     if(-not $Job.secondUrl){throw 'صورة ظهر الهوية غير موجودة'}
@@ -123,8 +183,13 @@ function Print-Job($Job) {
 
 Write-Host "وكيل طباعة مكتبة الهندسة — $($config.agentId)" -ForegroundColor Cyan
 if(-not [bool]$config.enabled){Write-Host 'الوضع الآمن مفعل: غيّر enabled إلى true بعد إكمال الاختبار.' -ForegroundColor Yellow;exit 2}
+$nextMaterialSync=Get-Date
 while($true){
   try{
+    if((Get-Date) -ge $nextMaterialSync){
+      try{Sync-Materials 10}catch{Write-Host "تعذرت مزامنة الملازم: $($_.Exception.Message)" -ForegroundColor DarkYellow}
+      $nextMaterialSync=(Get-Date).AddMinutes($materialSyncMinutes)
+    }
     $response=Invoke-WebRequest -UseBasicParsing -Uri "$server/api/print-agent/next?agentId=$([uri]::EscapeDataString([string]$config.agentId))" -Headers $headers
     if($response.StatusCode -eq 200 -and $response.Content){
       $payload=$response.Content|ConvertFrom-Json;$job=$payload.job

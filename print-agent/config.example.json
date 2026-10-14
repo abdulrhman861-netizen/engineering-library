@@ -3,6 +3,8 @@
   "agentId": "LAPTOP-VH2JKUMB",
   "token": "ضع_هنا_PRINT_AGENT_TOKEN",
   "pollSeconds": 5,
+  "materialsRoot": "D:\\EngineeringLibrary\\Materials",
+  "materialSyncMinutes": 5,
   "enabled": false,
   "printers": {
     "1": "Canon iR-ADV 8285/8295 UFR II111111111111111",
