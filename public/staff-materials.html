@@ -11,4 +11,4 @@ function directMaterial(id){location.href=`/material-direct-print.html?id=${id}&
 function openEdit(id){const m=materials.find(x=>Number(x.material_id)===Number(id));if(!m)return;editId.value=id;editTitle.value=m.title;editDoctor.value=m.doctor_name||'';editDept.value=m.department_code;editStage.value=m.stage_code;modal.classList.add('open')}function closeEdit(){modal.classList.remove('open')}
 async function saveEdit(e){e.preventDefault();const r=await api(`/api/materials/${editId.value}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:editTitle.value,doctorName:editDoctor.value,department:editDept.value,stage:editStage.value})}),d=await r.json();alert(r.ok?'تم تعديل بيانات الملزمة':(d.error||'تعذر التعديل'));if(r.ok){closeEdit();load()}}
 load();
-</script></body></html>
+</script><script src="/staff-chat-alerts.js"></script></body></html>
