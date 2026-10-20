@@ -73,6 +73,7 @@ create table if not exists student_print_files (
 
 alter table student_print_files add column if not exists student_name text;
 alter table student_print_files add column if not exists phone text;
+alter table student_print_files add column if not exists student_number text;
 alter table student_print_files add column if not exists notes text;
 alter table student_print_files add column if not exists second_file_path text;
 alter table student_print_files add column if not exists second_storage_path text;

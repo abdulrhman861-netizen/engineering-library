@@ -149,7 +149,7 @@ function tgButtons(rows){return {inline_keyboard:rows};}
 async function tgSession(chatId){const r=await pool.query('select * from telegram_sessions where chat_id=$1',[chatId]);return r.rows[0]||null;}
 async function tgSaveSession(chatId,user,state,data={}){await pool.query(`insert into telegram_sessions(chat_id,telegram_user_id,username,state,data,updated_at) values($1,$2,$3,$4,$5,now()) on conflict(chat_id) do update set telegram_user_id=excluded.telegram_user_id,username=excluded.username,state=excluded.state,data=excluded.data,updated_at=now()`,[chatId,user?.id||null,user?.username||null,state,JSON.stringify(data)]);}
 function tgPrice(pageCount,copies,colorMode,paperSize,duplexMode){const pages=Math.max(1,Number(pageCount||1))*Math.max(1,Number(copies||1));if(paperSize==='A3')return pages*500;if(colorMode==='COLOR'&&duplexMode!=='SIMPLEX')return Math.ceil(pages/2)*250;if(colorMode==='COLOR')return pages*150;return pages*50;}
-function tgSummary(d){const color=d.colorMode==='COLOR'?'ملون':'أسود وأبيض',duplex=d.duplexMode==='SIMPLEX'?'وجه واحد':'وجهين';return `الملف: ${d.originalName}\nالصفحات: ${d.pageCount||1}\nالنسخ: ${d.copies}\nالطباعة: ${color}\nالورق: ${d.paperSize}\nالنوع: ${duplex}\nالسعر التقديري: ${Number(d.price||0).toLocaleString('ar-IQ')} دينار`}
+function tgSummary(d){const color=d.colorMode==='COLOR'?'ملون':'أسود وأبيض';return `الملف: ${d.originalName}\nالصفحات: ${d.pageCount||1}\nالطباعة: ${color}\nالسعر التقديري: ${Number(d.price||0).toLocaleString('ar-IQ')} دينار`}
 async function tgDownloadFile(fileId,originalName,mimeType,fileSize){
   if(Number(fileSize||0)>20*1024*1024)return {tooLarge:true};
   const meta=await telegramApi('getFile',{file_id:fileId});
@@ -166,30 +166,33 @@ async function tgDownloadFile(fileId,originalName,mimeType,fileSize){
 }
 async function handleTelegramMessage(message){
   const chatId=message.chat.id,user=message.from,text=String(message.text||'').trim();
-  if(['/start','/print'].some(c=>text.startsWith(c))){await tgSaveSession(chatId,user,'AWAITING_NAME',{});return tgSend(chatId,'أهلاً بك في بوت مكتبة الهندسة الرقمية للطباعة 📚\nاكتب اسمك الثلاثي للبدء.');}
+  if(['/start','/print'].some(c=>text.startsWith(c))){await tgSaveSession(chatId,user,'AWAITING_CONTACT',{});return tgSend(chatId,'أهلاً بك في بوت مكتبة الهندسة الرقمية للطباعة 📚\nاكتب اسمك أو رقم هاتفك للبدء.');}
   if(text==='/price')return tgSend(chatId,'الأسعار:\nA4 أسود وأبيض: 50 دينار للصفحة\nA4 ملون: 150 دينار للصفحة\nA4 ملون وجهين: 250 دينار للورقة\nA3: 500 دينار للصفحة\nالحد الأعلى: 100 صفحة مطبوعة.');
-  if(text==='/cancel'){const s=await tgSession(chatId);if(s?.data?.storagePath)await removeStored(s.data.storagePath,s.data.url);await tgSaveSession(chatId,user,'AWAITING_NAME',{});return tgSend(chatId,'تم إلغاء الطلب الحالي. أرسل /print لبدء طلب جديد.');}
+  if(text==='/cancel'){const s=await tgSession(chatId);if(s?.data?.storagePath)await removeStored(s.data.storagePath,s.data.url);await tgSaveSession(chatId,user,'AWAITING_CONTACT',{});return tgSend(chatId,'تم إلغاء الطلب الحالي. أرسل /print لبدء طلب جديد.');}
   if(text==='/status'){const r=await pool.query('select file_id,status,original_name,estimated_price_iqd,created_at from student_print_files where telegram_chat_id=$1 order by created_at desc limit 5',[chatId]);return tgSend(chatId,r.rowCount?r.rows.map(x=>`#${x.file_id} — ${x.original_name} — ${x.status} — ${x.estimated_price_iqd} د.ع`).join('\n'):'لا توجد طلبات سابقة.');}
-  let s=await tgSession(chatId);if(!s){await tgSaveSession(chatId,user,'AWAITING_NAME',{});return tgSend(chatId,'اضغط Start أو أرسل /print لبدء طلب طباعة.');}
+  let s=await tgSession(chatId);if(!s){await tgSaveSession(chatId,user,'AWAITING_CONTACT',{});return tgSend(chatId,'اضغط Start أو أرسل /print لبدء طلب طباعة.');}
   const d=s.data||{};
-  if(s.state==='AWAITING_NAME'&&text){d.studentName=text.slice(0,150);await tgSaveSession(chatId,user,'AWAITING_PHONE',d);return tgSend(chatId,'أرسل رقم هاتفك، مثال: 07xxxxxxxxx');}
-  if(s.state==='AWAITING_PHONE'&&text){if(!/^\+?\d[\d\s-]{6,18}$/.test(text))return tgSend(chatId,'رقم الهاتف غير صحيح. أرسله بالأرقام فقط.');d.phone=text;await tgSaveSession(chatId,user,'AWAITING_FILE',d);return tgSend(chatId,'أرسل الآن ملف PDF أو Word أو صورة للطباعة.\nللملفات الأكبر من 20MB استخدم رابط الرفع:\n'+`${APP_BASE_URL}/upload.html`);}
+  if(['AWAITING_CONTACT','AWAITING_NAME','AWAITING_PHONE'].includes(s.state)&&text){
+    if(/^\+?\d[\d\s-]{6,18}$/.test(text))d.phone=text.slice(0,30);else d.studentName=text.slice(0,150);
+    await tgSaveSession(chatId,user,'AWAITING_FILE',d);
+    return tgSend(chatId,'أرسل الآن ملف PDF أو Word أو صورة للطباعة.\nللملفات الأكبر من 20MB استخدم رابط الرفع:\n'+`${APP_BASE_URL}/upload.html`);
+  }
   const doc=message.document,photo=message.photo?.[message.photo.length-1];
   if(s.state==='AWAITING_FILE'&&(doc||photo)){
     const result=await tgDownloadFile(doc?.file_id||photo.file_id,doc?.file_name||`photo-${Date.now()}.jpg`,doc?.mime_type||'image/jpeg',doc?.file_size||photo.file_size);
     if(result.tooLarge)return tgSend(chatId,`حجم الملف أكبر من حد الاستقبال المباشر للبوت. ارفعه من هنا ثم اكتب رقم هاتفك نفسه:\n${APP_BASE_URL}/upload.html`);
-    Object.assign(d,{requestKey:crypto.randomUUID(),originalName:result.file.originalname,mimeType:result.file.mimetype,url:result.stored.url,storagePath:result.stored.storagePath,pageCount:result.pageCount});await tgSaveSession(chatId,user,'AWAITING_COLOR',d);return tgSend(chatId,'اختر نوع الطباعة:',tgButtons([[{text:'⚫ أسود وأبيض',callback_data:'color:BW'},{text:'🌈 ملون',callback_data:'color:COLOR'}]]));
+    Object.assign(d,{requestKey:crypto.randomUUID(),originalName:result.file.originalname,mimeType:result.file.mimetype,url:result.stored.url,storagePath:result.stored.storagePath,pageCount:result.pageCount,copies:1,paperSize:'A4',duplexMode:'SIMPLEX'});await tgSaveSession(chatId,user,'AWAITING_COLOR',d);return tgSend(chatId,'اختر نوع الطباعة:',tgButtons([[{text:'⚫ أسود وأبيض',callback_data:'color:BW'},{text:'🌈 ملون',callback_data:'color:COLOR'}]]));
   }
   if(s.state==='AWAITING_COPIES'&&text){const copies=Math.min(100,Math.max(1,Number(text)));if(!Number.isInteger(copies))return tgSend(chatId,'اكتب عدد النسخ رقماً صحيحاً.');if(Number(d.pageCount||1)*copies>100)return tgSend(chatId,'إجمالي الصفحات يتجاوز 100. قلل عدد النسخ.');d.copies=copies;d.price=tgPrice(d.pageCount,copies,d.colorMode,d.paperSize,d.duplexMode);await tgSaveSession(chatId,user,'AWAITING_CONFIRM',d);return tgSend(chatId,tgSummary(d),tgButtons([[{text:'✅ تأكيد الطلب',callback_data:'confirm:yes'},{text:'❌ إلغاء',callback_data:'confirm:no'}]]));}
   return tgSend(chatId,'أكمل الخطوة المطلوبة أو أرسل /cancel ثم /print للبدء من جديد.');
 }
 async function handleTelegramCallback(q){
   const chatId=q.message.chat.id,user=q.from,s=await tgSession(chatId);await telegramApi('answerCallbackQuery',{callback_query_id:q.id});if(!s)return tgSend(chatId,'انتهت الجلسة. أرسل /print للبدء من جديد.');const d=s.data||{},[kind,value]=String(q.data||'').split(':');
-  if(kind==='color'&&s.state==='AWAITING_COLOR'){d.colorMode=value==='COLOR'?'COLOR':'BW';await tgSaveSession(chatId,user,'AWAITING_PAPER',d);return tgSend(chatId,'اختر حجم الورق:',tgButtons([[{text:'A4',callback_data:'paper:A4'},{text:'A3',callback_data:'paper:A3'}]]));}
+  if(kind==='color'&&s.state==='AWAITING_COLOR'){d.colorMode=value==='COLOR'?'COLOR':'BW';d.copies=1;d.paperSize='A4';d.duplexMode='SIMPLEX';d.price=tgPrice(d.pageCount,1,d.colorMode,'A4','SIMPLEX');await tgSaveSession(chatId,user,'AWAITING_CONFIRM',d);return tgSend(chatId,tgSummary(d),tgButtons([[{text:'✅ تأكيد الطلب',callback_data:'confirm:yes'},{text:'❌ إلغاء',callback_data:'confirm:no'}]]));}
   if(kind==='paper'&&s.state==='AWAITING_PAPER'){d.paperSize=value==='A3'?'A3':'A4';await tgSaveSession(chatId,user,'AWAITING_DUPLEX',d);return tgSend(chatId,'اختر طريقة الطباعة:',tgButtons([[{text:'وجه واحد',callback_data:'duplex:SIMPLEX'},{text:'وجهين',callback_data:'duplex:DUPLEX_LONG'}]]));}
   if(kind==='duplex'&&s.state==='AWAITING_DUPLEX'){d.duplexMode=value==='DUPLEX_LONG'?'DUPLEX_LONG':'SIMPLEX';await tgSaveSession(chatId,user,'AWAITING_COPIES',d);return tgSend(chatId,'اكتب عدد النسخ المطلوبة. الحد الأعلى لإجمالي الصفحات 100.');}
   if(kind==='confirm'&&s.state==='AWAITING_CONFIRM'){
-    if(value!=='yes'){if(d.storagePath)await removeStored(d.storagePath,d.url);await tgSaveSession(chatId,user,'AWAITING_NAME',{});return tgSend(chatId,'تم إلغاء الطلب. أرسل /print لبدء طلب جديد.');}
+    if(value!=='yes'){if(d.storagePath)await removeStored(d.storagePath,d.url);await tgSaveSession(chatId,user,'AWAITING_CONTACT',{});return tgSend(chatId,'تم إلغاء الطلب. أرسل /print لبدء طلب جديد.');}
     const r=await pool.query(`insert into student_print_files(original_name,file_path,storage_path,print_type,copies,color_mode,paper_size,duplex_mode,student_name,phone,notes,page_count,telegram_chat_id,telegram_user_id,estimated_price_iqd,payment_status,telegram_request_key) values($1,$2,$3,'DOCUMENT',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'UNPAID',$15) on conflict(telegram_request_key) where telegram_request_key is not null do update set telegram_request_key=excluded.telegram_request_key returning file_id`,[d.originalName,d.url,d.storagePath,d.copies,d.colorMode,d.paperSize,d.duplexMode,d.studentName,d.phone,'طلب وارد من بوت Telegram',d.pageCount,chatId,user.id,d.price,d.requestKey||`${chatId}-${q.id}`]);await tgSaveSession(chatId,user,'COMPLETED',{});return tgSend(chatId,`✅ تم تسجيل طلبك رقم #${r.rows[0].file_id}\nالسعر التقديري: ${Number(d.price).toLocaleString('ar-IQ')} دينار\nسيظهر الطلب الآن لدى كادر المكتبة. يمكنك متابعة حالته بواسطة /status`);
   }
 }
@@ -335,26 +338,26 @@ app.post('/upload-student-file',upload.array('files',20),async(req,res)=>{
   const printType=['ID_CARD','ID_PASSPORT'].includes(req.body.printType)?req.body.printType:'DOCUMENT';
   if(printType==='ID_CARD'&&(files.length!==2||files.some(f=>!f.mimetype.startsWith('image/'))))return res.status(400).json({success:false,message:'طباعة الهوية تحتاج صورتين فقط: الوجه والظهر'});
   if(printType==='ID_PASSPORT'&&(files.length!==3||files.some(f=>!f.mimetype.startsWith('image/'))))return res.status(400).json({success:false,message:'هذا التنسيق يحتاج 3 صور: وجه الهوية، ظهر الهوية، والجواز'});
-  const common=[Math.max(1,Number(req.body.copies||1)),req.body.colorMode==='COLOR'?'COLOR':'BW',String(req.body.studentName||'').trim(),String(req.body.phone||'').trim(),String(req.body.notes||'').trim()];
+  const common=[Math.max(1,Number(req.body.copies||1)),req.body.colorMode==='COLOR'?'COLOR':'BW',String(req.body.studentName||'').trim(),String(req.body.phone||'').trim(),String(req.body.studentNumber||'').trim(),String(req.body.notes||'').trim()];
   const created=[];
   if(printType==='ID_CARD'||printType==='ID_PASSPORT'){
     const front=await storeFile(files[0],'print-orders');
     const back=await storeFile(files[1],'print-orders');
     const passport=files[2]?await storeFile(files[2],'print-orders'):null;
     try{
-      const r=await pool.query("insert into student_print_files(original_name,file_path,storage_path,second_file_path,second_storage_path,third_file_path,third_storage_path,print_type,copies,color_mode,student_name,phone,notes,page_count) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1) returning file_id",[passport?'هوية وجواز - منسقة':'هوية - الوجه والظهر',front.url,front.storagePath,back.url,back.storagePath,passport?.url||null,passport?.storagePath||null,printType,...common]);
+      const r=await pool.query("insert into student_print_files(original_name,file_path,storage_path,second_file_path,second_storage_path,third_file_path,third_storage_path,print_type,copies,color_mode,student_name,phone,student_number,notes,page_count) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1) returning file_id",[passport?'هوية وجواز - منسقة':'هوية - الوجه والظهر',front.url,front.storagePath,back.url,back.storagePath,passport?.url||null,passport?.storagePath||null,printType,...common]);
       created.push(r.rows[0].file_id);
     }catch(e){await removeStored(front.storagePath,front.url);await removeStored(back.storagePath,back.url);if(passport)await removeStored(passport.storagePath,passport.url);throw e;}
   }else{
     for(const file of files){
       const stored=await storeFile(file,'print-orders');
-      try{const r=await pool.query("insert into student_print_files(original_name,file_path,storage_path,print_type,copies,color_mode,student_name,phone,notes,page_count) values($1,$2,$3,'DOCUMENT',$4,$5,$6,$7,$8,$9) returning file_id",[file.originalname,stored.url,stored.storagePath,...common,estimatePageCount(file)]);created.push(r.rows[0].file_id);}
+      try{const r=await pool.query("insert into student_print_files(original_name,file_path,storage_path,print_type,copies,color_mode,student_name,phone,student_number,notes,page_count) values($1,$2,$3,'DOCUMENT',$4,$5,$6,$7,$8,$9,$10) returning file_id",[file.originalname,stored.url,stored.storagePath,...common,estimatePageCount(file)]);created.push(r.rows[0].file_id);}
       catch(e){await removeStored(stored.storagePath,stored.url);throw e;}
     }
   }
   res.json({success:true,message:`تم إرسال ${created.length} طلب للطباعة`,orderIds:created});
 });
-app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query(`select f.file_id as id,f.original_name as "originalName",f.file_path as url,f.second_file_path as "secondUrl",f.third_file_path as "thirdUrl",f.print_type as "printType",f.copies,f.color_mode,f.page_count as "pageCount",f.paper_size as "paperSize",f.duplex_mode as "duplexMode",f.status,f.student_name,f.phone,f.notes,f.created_at as time,f.direct_print_status as "directPrintStatus",f.printer_number as "printerNumber",f.print_error as "printError",f.telegram_chat_id as "telegramChatId",f.estimated_price_iqd as "estimatedPriceIqd",f.payment_status as "paymentStatus",q.full_name as "queuedByName",c.full_name as "completedByName",x.full_name as "cancelledByName" from student_print_files f left join users q on q.user_id=f.queued_by left join users c on c.user_id=f.completed_by left join users x on x.user_id=f.cancelled_by where f.status<>'CANCELLED' and f.archived_at is null order by f.created_at desc limit 1000`); res.json(r.rows); });
+app.get('/api/student-files',auth,async(_req,res)=>{ const r=await pool.query(`select f.file_id as id,f.original_name as "originalName",f.file_path as url,f.second_file_path as "secondUrl",f.third_file_path as "thirdUrl",f.print_type as "printType",f.copies,f.color_mode,f.page_count as "pageCount",f.paper_size as "paperSize",f.duplex_mode as "duplexMode",f.status,f.student_name,f.phone,f.student_number,f.notes,f.created_at as time,f.direct_print_status as "directPrintStatus",f.printer_number as "printerNumber",f.print_error as "printError",f.telegram_chat_id as "telegramChatId",f.estimated_price_iqd as "estimatedPriceIqd",f.payment_status as "paymentStatus",q.full_name as "queuedByName",c.full_name as "completedByName",x.full_name as "cancelledByName" from student_print_files f left join users q on q.user_id=f.queued_by left join users c on c.user_id=f.completed_by left join users x on x.user_id=f.cancelled_by where f.status<>'CANCELLED' and f.archived_at is null order by f.created_at desc limit 1000`); res.json(r.rows); });
 app.get('/api/student-files/:id',auth,async(req,res)=>{const r=await pool.query('select file_id as id,original_name as "originalName",file_path as url,second_file_path as "secondUrl",print_type as "printType",copies,color_mode,student_name,phone,notes from student_print_files where file_id=$1',[req.params.id]);if(!r.rowCount)return res.status(404).json({success:false,error:'الطلب غير موجود'});res.json(r.rows[0]);});
 app.patch('/api/student-files/:id/status',auth,async(req,res)=>{ const status=['QUEUED','PRINTING','COMPLETED','CANCELLED'].includes(req.body.status)?req.body.status:'QUEUED'; await pool.query("update student_print_files set status=$1,completed_by=case when $1='COMPLETED' then $2 else completed_by end,completed_at=case when $1='COMPLETED' then now() else completed_at end where file_id=$3",[status,req.user.userId,req.params.id]); res.json({success:true}); });
 app.post('/api/student-files/:id/direct-print',auth,async(req,res)=>{

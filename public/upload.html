@@ -40,8 +40,9 @@
     <h2>ارفع ملفك للطباعة</h2>
     <p>يمكنك رفع ملفات PDF، Word، أو صور (JPG/PNG)</p>
 
-    <div class="field"><label for="studentName">اسم الطالب *</label><input id="studentName" placeholder="الاسم الثلاثي أو مستطرق" maxlength="120" required></div>
-    <div class="field"><label for="phone">رقم الهاتف *</label><input id="phone" type="tel" placeholder="07xxxxxxxxx أو مستطرق" maxlength="20" required></div>
+    <div class="field"><label for="studentName">اسم الطالب *</label><input id="studentName" placeholder="اكتب اسم الطالب" maxlength="120" required></div>
+    <div class="field"><label for="studentNumber">رقم الطالب (اختياري)</label><input id="studentNumber" placeholder="يمكن تركه فارغاً" maxlength="50"></div>
+    <div class="field"><label for="phone">رقم الهاتف (اختياري)</label><input id="phone" type="tel" placeholder="07xxxxxxxxx" maxlength="20"></div>
     <div class="field"><label for="copies">عدد النسخ</label><input id="copies" type="number" value="1" min="1" max="100"></div>
     <div class="field"><label for="colorMode">نوع الطباعة</label><select id="colorMode"><option value="BW">أبيض وأسود</option><option value="COLOR">ملون</option></select></div>
     <div class="field"><label for="printType">نوع الطلب</label><select id="printType" onchange="updatePrintType()"><option value="DOCUMENT">ملفات وصور عادية</option><option value="ID_CARD">طباعة هوية (الوجه والظهر جنباً إلى جنب)</option></select></div>
@@ -85,7 +86,7 @@
 
         const studentName=document.getElementById('studentName').value.trim();
         const phone=document.getElementById('phone').value.trim();
-        if(!studentName||!phone){alert('اسم الطالب ورقم الهاتف مطلوبان. اكتب مستطرق إذا لم تتوفر البيانات.');return;}
+        if(!studentName){alert('اكتب اسم الطالب للمتابعة.');return;}
         if([...fileInput.files].some(f=>f.size>50*1024*1024)){alert('يوجد ملف أكبر من 50MB. صغّر الملف ثم حاول مجدداً.');return;}
         btn.disabled = true;
         const printType=document.getElementById('printType').value;
@@ -94,6 +95,7 @@
         for(const file of fileInput.files)formData.append('files',file);
         formData.append('studentName', studentName);
         formData.append('phone', phone);
+        formData.append('studentNumber', document.getElementById('studentNumber').value.trim());
         formData.append('copies', document.getElementById('copies').value);
         formData.append('colorMode', document.getElementById('colorMode').value);
         formData.append('notes', document.getElementById('notes').value.trim());
