@@ -137,7 +137,8 @@
                 <span id="userGreeting" class="text-white me-3 fw-bold small"></span>
                 <a href="admin-upload.html" class="btn btn-success btn-sm fw-bold me-2"><i class="fa-solid fa-cloud-arrow-up me-1"></i> رفع ملزمة</a>
                 <a href="staff-materials.html" class="btn btn-primary btn-sm fw-bold me-2"><i class="fa-solid fa-book-open me-1"></i> إدارة الملازم</a>
-                <a href="student-files.html" class="btn btn-warning btn-sm fw-bold me-2"><i class="fa-solid fa-print me-1"></i> ملفات الطباعة</a>
+                <a href="student-files.html?source=student" class="btn btn-warning btn-sm fw-bold me-2"><i class="fa-solid fa-user-graduate me-1"></i> طلبات الطلاب</a>
+                <a href="student-files.html?source=staff" class="btn btn-light btn-sm fw-bold me-2"><i class="fa-solid fa-print me-1"></i> ملفات الكادر</a>
                 <a href="tasks-v2.html" class="btn btn-info btn-sm fw-bold me-2"><i class="fa-solid fa-list-check me-1"></i> المهام</a>
                 <a href="quick-print.html" class="btn btn-warning btn-sm fw-bold me-2"><i class="fa-solid fa-bolt me-1"></i> السحب السريع</a>
                 <a href="staff-chat.html" class="btn btn-light btn-sm fw-bold me-2"><i class="fa-solid fa-comments me-1"></i> المحادثات</a>
@@ -626,30 +627,33 @@
             container.innerHTML = html;
         }
 
-        // تسجيل بصمة الدوام للموظفين مباشرة
+        function getAttendanceLocation(){
+            return new Promise((resolve,reject)=>{
+                if(!navigator.geolocation)return reject(new Error('هذا الجهاز لا يدعم تحديد الموقع.'));
+                navigator.geolocation.getCurrentPosition(
+                    p=>resolve({latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy:p.coords.accuracy}),
+                    ()=>reject(new Error('تعذر تحديد الموقع. فعّل GPS واسمح للموقع بالوصول إلى موقعك.')),
+                    {enableHighAccuracy:true,timeout:20000,maximumAge:0}
+                );
+            });
+        }
+
         async function registerAttendance(type) {
-            let empName = localStorage.getItem('employeeName');
-            if (!empName) {
-                empName = prompt("أدخل اسم الموظف الثلاثي لتسجيل الدوام:");
-            }
-            if (!empName) return;
-
+            const empName=localStorage.getItem('employeeName')||'الموظف';
+            const token=localStorage.getItem('employeeToken');
+            if(!token)return location.replace('/staff.html');
             try {
-                const endpoint = type === 'دخول' ? '/api/attendance/check-in' : '/api/attendance/check-out';
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ employeeName: empName, type: type })
-                });
-                const data = await res.json();
-                
-                if (type === 'خروج' && data.hours) {
-                    document.getElementById('hoursTracker').innerText = `إجمالي ساعات الدوام المسجلة اليوم: ${data.hours} ساعة`;
-                }
-
-                alert(`تم تسجيل ${type} الموظف (${empName}) بنجاح!`);
+                document.getElementById('hoursTracker').innerText='جاري تحديد موقعك…';
+                const locationData=await getAttendanceLocation();
+                const endpoint=type==='دخول'?'/api/attendance/check-in':'/api/attendance/check-out';
+                const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify(locationData)});
+                const data=await res.json();
+                if(!res.ok||!data.success)throw new Error(data.error||data.message||'تعذر تسجيل الدوام');
+                document.getElementById('hoursTracker').innerText=`تم تسجيل ${type} مع الموقع — دقة الموقع نحو ${Math.round(locationData.accuracy||0)} متر`;
+                alert(`${data.message||`تم تسجيل ${type}`} للموظف (${empName})`);
             } catch (err) {
-                alert("حدث خطأ أثناء الاتصال بالسيرفر.");
+                document.getElementById('hoursTracker').innerText=err.message;
+                alert(err.message);
             }
         }
 
