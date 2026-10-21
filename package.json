@@ -1,6 +1,6 @@
 {
   "name": "iraqi-university-engineering-library",
-  "version": "6.3.0",
+  "version": "6.4.0",
   "private": true,
   "description": "مكتبة كلية الهندسة الرقمية - الجامعة العراقية",
   "main": "server.js",
@@ -8,7 +8,9 @@
     "start": "node server.js",
     "check": "node --check server.js"
   },
-  "engines": { "node": "22.x" },
+  "engines": {
+    "node": "22.x"
+  },
   "dependencies": {
     "bcrypt": "^6.0.0",
     "dotenv": "^16.4.7",

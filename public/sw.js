@@ -1,10 +1,11 @@
-const CACHE_NAME = 'library-app-online-v6-3-0';
+const CACHE_NAME = 'library-app-online-v6-4-0';
 
 // قائمة الملفات والصفحات الواجب تخزينها للأوفلاين
 const urlsToCache = [
   '/',
   '/index.html',
   '/staff.html',
+  '/teacher.html',
   '/staff-chat-alerts.js',
   '/staff-nav.js',
   '/staff-materials.html',
@@ -28,6 +29,7 @@ const urlsToCache = [
   '/student-chat.html',
   '/staff-chat.html',
   '/notifications.js',
+  '/assets/department-board-v6.4.jpg',
   '/fonts/Khalid Art bold.ttf',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',

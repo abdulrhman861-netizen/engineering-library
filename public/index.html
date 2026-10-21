@@ -31,12 +31,13 @@
         .search-box i { position: absolute; right: 18px; top: 18px; color: #888; }
         
         .grid-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; padding: 20px 40px; max-width: 1200px; margin: auto; }
-        .dept-card { --accent:#0878d1; --accent2:#00b4d8; background: linear-gradient(145deg,#fff,#f7fbff); padding: 20px 10px; border-radius: 18px; text-align: center; box-shadow: 0 6px 18px rgba(0,44,88,.09); cursor: pointer; transition: transform .28s,box-shadow .28s,border-color .28s; text-decoration: none; border: 1px solid #e6eef6; display: flex; flex-direction: column; align-items: center; justify-content: center; animation: cardRise .45s ease both; }
+        .dept-card { --accent:#0878d1; --accent2:#00b4d8; background: linear-gradient(145deg,#fff,#f7fbff); padding: 12px 10px 18px; border-radius: 18px; text-align: center; box-shadow: 0 6px 18px rgba(0,44,88,.09); cursor: pointer; transition: transform .28s,box-shadow .28s,border-color .28s; text-decoration: none; border: 1px solid #e6eef6; display: flex; flex-direction: column; align-items: center; justify-content: center; animation: cardRise .45s ease both; overflow:hidden }
         .dept-card:nth-child(2n){--accent:#6938c9;--accent2:#a855f7}.dept-card:nth-child(3n){--accent:#008f68;--accent2:#2dd4bf}.dept-card:nth-child(4n){--accent:#d35400;--accent2:#f59e0b}
         .dept-card:hover { transform: translateY(-8px) scale(1.025); border-color: var(--accent); box-shadow: 0 14px 28px color-mix(in srgb,var(--accent) 23%,transparent); }
         .dept-card i { width:64px;height:64px;border-radius:20px;display:grid;place-items:center;font-size: 2rem; color:#fff; margin-bottom: 12px; background:linear-gradient(135deg,var(--accent),var(--accent2)); box-shadow:0 8px 18px color-mix(in srgb,var(--accent) 32%,transparent); transition:transform .28s; }
         .dept-card:hover i{transform:rotate(-5deg) scale(1.08)}
         .dept-name { font-size: 1rem; font-weight: bold; color: #333; }
+        .dept-photo{width:100%;height:92px;border-radius:13px;margin-bottom:10px;background-image:url('/assets/department-board-v6.4.jpg');background-size:1050px 700px;background-repeat:no-repeat;box-shadow:inset 0 0 0 1px #fff8,0 5px 15px #0002}.dept-card[data-dept="architecture"] .dept-photo{background-position:-255px -300px}.dept-card[data-dept="civil"] .dept-photo{background-position:-320px -300px}.dept-card[data-dept="electric"] .dept-photo{background-position:-388px -300px}.dept-card[data-dept="networks"] .dept-photo{background-position:-453px -300px}.dept-card[data-dept="ai"] .dept-photo{background-position:-518px -300px}.dept-card[data-dept="computer"] .dept-photo{background-position:-583px -300px}.dept-card[data-dept="energy"] .dept-photo{background-position:-648px -300px}.dept-card .dept-photo+i{width:46px;height:46px;font-size:1.35rem;margin-top:-35px;border:3px solid #fff;z-index:1}
         @keyframes pageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@keyframes cardRise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
         
         .student-files-card { background: #8e44ad !important; color: white !important; }
@@ -71,29 +72,31 @@
 
 <!-- شبكة الأقسام والخدمات -->
 <div class="grid-container" id="deptsGrid">
-    <div class="dept-card" onclick="openDept('computer', 'هندسة الحاسوب')">
-        <i class="fas fa-microchip"></i><div class="dept-name">هندسة الحاسوب</div>
+    <div class="dept-card" data-dept="computer" onclick="openDept('computer', 'هندسة الحاسوب')">
+        <div class="dept-photo"></div><i class="fas fa-microchip"></i><div class="dept-name">هندسة الحاسوب</div>
     </div>
-    <div class="dept-card" onclick="openDept('networks', 'هندسة الشبكات والأمن السيبراني')">
-        <i class="fas fa-network-wired"></i><div class="dept-name">هندسة الشبكات والأمن السيبراني</div>
+    <div class="dept-card" data-dept="networks" onclick="openDept('networks', 'هندسة الشبكات والأمن السيبراني')">
+        <div class="dept-photo"></div><i class="fas fa-network-wired"></i><div class="dept-name">هندسة الشبكات والأمن السيبراني</div>
     </div>
-    <div class="dept-card" onclick="openDept('civil', 'الهندسة المدنية')">
-        <i class="fas fa-drafting-compass"></i><div class="dept-name">الهندسة المدنية</div>
+    <div class="dept-card" data-dept="civil" onclick="openDept('civil', 'الهندسة المدنية')">
+        <div class="dept-photo"></div><i class="fas fa-drafting-compass"></i><div class="dept-name">الهندسة المدنية</div>
     </div>
-    <div class="dept-card" onclick="openDept('ai', 'الذكاء الاصطناعي')">
-        <i class="fas fa-brain"></i><div class="dept-name">الذكاء الاصطناعي</div>
+    <div class="dept-card" data-dept="ai" onclick="openDept('ai', 'الذكاء الاصطناعي')">
+        <div class="dept-photo"></div><i class="fas fa-brain"></i><div class="dept-name">الذكاء الاصطناعي</div>
     </div>
-    <div class="dept-card" onclick="openDept('electric', 'هندسة الكهرباء')">
-        <i class="fas fa-bolt"></i><div class="dept-name">هندسة الكهرباء</div>
+    <div class="dept-card" data-dept="electric" onclick="openDept('electric', 'هندسة الكهرباء')">
+        <div class="dept-photo"></div><i class="fas fa-bolt"></i><div class="dept-name">هندسة الكهرباء</div>
     </div>
-    <div class="dept-card" onclick="openDept('architecture', 'الهندسة المعمارية')">
-        <i class="fas fa-building"></i><div class="dept-name">الهندسة المعمارية</div>
+    <div class="dept-card" data-dept="architecture" onclick="openDept('architecture', 'الهندسة المعمارية')">
+        <div class="dept-photo"></div><i class="fas fa-building"></i><div class="dept-name">الهندسة المعمارية</div>
     </div>
-    <div class="dept-card" onclick="openDept('energy', 'هندسة الطاقة والطاقة المتجددة')">
-        <i class="fas fa-solar-panel"></i><div class="dept-name">هندسة الطاقة والطاقة المتجددة</div>
+    <div class="dept-card" data-dept="energy" onclick="openDept('energy', 'هندسة الطاقة والطاقة المتجددة')">
+        <div class="dept-photo"></div><i class="fas fa-solar-panel"></i><div class="dept-name">هندسة الطاقة والطاقة المتجددة</div>
     </div>
     
 </div>
+
+<div style="max-width:1200px;margin:0 auto 18px;padding:0 40px"><a href="teacher.html" class="dept-card" style="min-height:auto;background:linear-gradient(120deg,#073b70,#0c91a7);color:white"><i class="fas fa-chalkboard-user"></i><div class="dept-name" style="color:white">بوابة التدريسيين والدكاترة</div></a></div>
 
 <nav class="bottom-nav"><a class="active" href="index.html"><i class="fas fa-book-open"></i>واجهة الملازم</a><a href="students.html"><i class="fas fa-user-graduate"></i>بوابة الطلاب</a><a href="staff.html"><i class="fas fa-users-gear"></i>الكادر والإدارة</a></nav>
 
@@ -104,9 +107,10 @@
             const departments = await (await fetch('/api/departments')).json();
             const grid = document.getElementById('deptsGrid');
             departments.forEach(d => {
-                if (grid.querySelector(`[data-dept="${d.code}"]`) || [...grid.children].some(x => x.getAttribute('onclick')?.includes(`'${d.code}'`))) return;
+                const existing=grid.querySelector(`[data-dept="${d.code}"]`) || [...grid.children].find(x => x.getAttribute('onclick')?.includes(`'${d.code}'`));
+                if(existing){const photo=existing.querySelector('.dept-photo');if(photo&&d.image_url){photo.style.backgroundImage=`url('${d.image_url}')`;photo.style.backgroundSize='cover';photo.style.backgroundPosition='center'}return;}
                 const card = document.createElement('div'); card.className='dept-card'; card.dataset.dept=d.code;
-                card.onclick=()=>openDept(d.code,d.name); card.innerHTML=`<i class="fas ${d.icon||'fa-graduation-cap'}"></i><div class="dept-name">${d.name}</div>`;
+                card.onclick=()=>openDept(d.code,d.name); card.innerHTML=`<div class="dept-photo" ${d.image_url?`style="background-image:url('${d.image_url}');background-size:cover;background-position:center"`:''}></div><i class="fas ${d.icon||'fa-graduation-cap'}"></i><div class="dept-name">${d.name}</div>`;
                 grid.appendChild(card);
             });
         } catch(e) { console.log('تعذر تحميل الأقسام الديناميكية'); }
