@@ -74,8 +74,8 @@ function Get-LocalMaterial([long]$MaterialId){
   return $null
 }
 
-function Send-Result([long]$Id,[bool]$Success,[string]$Message='',[int]$PageCount=0,[long]$MaterialId=0) {
-  $body = @{success=$Success;error=$Message;agentId=[string]$config.agentId;pageCount=$PageCount;materialId=$MaterialId} | ConvertTo-Json
+function Send-Result([long]$Id,[bool]$Success,[string]$Message='',[int]$PageCount=0,[long]$MaterialId=0,[int]$ActualPages=0,[int]$EstimatedSheets=0,[int]$CoverPages=0) {
+  $body = @{success=$Success;error=$Message;agentId=[string]$config.agentId;pageCount=$PageCount;materialId=$MaterialId;actualPages=$ActualPages;estimatedSheets=$EstimatedSheets;coverPages=$CoverPages;auditMethod='AGENT_CONFIRMED'} | ConvertTo-Json
   Invoke-RestMethod -Method Post -Uri "$server/api/print-agent/jobs/$Id/result" -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
 }
 function Download-JobFile([string]$Url,[string]$BaseName) {
@@ -103,6 +103,14 @@ function Convert-WordToPdf([string]$WordPath,[long]$Id) {
   $ascii=[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($pdf))
   $pageCount=[regex]::Matches($ascii,'/Type\s*/Page(?!s)\b').Count
   return [PSCustomObject]@{Path=$pdf;PageCount=[Math]::Max(1,$pageCount)}
+}
+function Get-PdfPageCount([string]$PdfPath) {
+  try{
+    $ascii=[Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($PdfPath))
+    $count=[regex]::Matches($ascii,'/Type\s*/Page(?!s)\b').Count
+    if($count -gt 0){return $count}
+  }catch{}
+  return 1
 }
 function Make-IdPdf([string]$Front,[string]$Back,[string]$Passport,[long]$Id) {
   $html=Join-Path $work "$Id-id.html";$pdf=Join-Path $work "$Id-id.pdf"
@@ -164,6 +172,9 @@ function Print-Job($Job) {
     $calculatedPages=[int]$converted.PageCount
     if($Job.cover){$Job.cover.pageCount=$calculatedPages}
   }
+  elseif($ext -eq '.pdf'){$calculatedPages=Get-PdfPageCount $toPrint}
+  else{$calculatedPages=1}
+  $coverPages=0
   if($Job.cover -and [bool]$Job.cover.enabled){
     $coverPdf=Make-CoverPdf $Job.cover ([long]$Job.id)
     $coverSettings='1x,paper=A4,fit,bin=auto,ignore-pdf-print-settings,monochrome,simplex'
@@ -171,6 +182,7 @@ function Print-Job($Job) {
     # بعض تعريفات Canon تعيد رمز خروج غير صفري رغم نجاح إرسال الغلاف للطابعة.
     # لا نوقف الطلب هنا حتى تستمر طباعة الملزمة الأصلية مباشرة بعد الغلاف.
     Start-Sleep -Seconds 2
+    $coverPages=1
   }
   $colorSetting=if($Job.colorMode -eq 'COLOR'){'color'}else{'monochrome'}
   $paperSetting=if($Job.paperSize -eq 'A3'){'paper=A3'}else{'paper=A4'}
@@ -178,7 +190,9 @@ function Print-Job($Job) {
   $printSettings=("{0}x,{1},fit,bin=auto,ignore-pdf-print-settings,{2},{3}" -f $copies,$paperSetting,$colorSetting,$duplexSetting)
   & $sumatra -silent -print-to $printer -print-settings $printSettings $toPrint
   if($LASTEXITCODE -ne 0){throw "SumatraPDF exit code $LASTEXITCODE"}
-  return [PSCustomObject]@{PageCount=$calculatedPages;MaterialId=[long]$Job.materialId}
+  $actualPages=([Math]::Max(1,$calculatedPages)*$copies)+$coverPages
+  $estimatedSheets=if([string]$Job.duplexMode -eq 'SIMPLEX'){([Math]::Max(1,$calculatedPages)*$copies)+$coverPages}else{([Math]::Ceiling(([Math]::Max(1,$calculatedPages)*$copies)/2))+$coverPages}
+  return [PSCustomObject]@{PageCount=$calculatedPages;MaterialId=[long]$Job.materialId;ActualPages=$actualPages;EstimatedSheets=$estimatedSheets;CoverPages=$coverPages}
 }
 
 Write-Host "وكيل طباعة مكتبة الهندسة — $($config.agentId)" -ForegroundColor Cyan
@@ -194,7 +208,7 @@ while($true){
     if($response.StatusCode -eq 200 -and $response.Content){
       $payload=$response.Content|ConvertFrom-Json;$job=$payload.job
       Write-Host "طباعة الطلب $($job.id) على الطابعة $($job.printerNumber)..."
-      try{$printResult=Print-Job $job;Send-Result ([long]$job.id) $true '' ([int]$printResult.PageCount) ([long]$printResult.MaterialId);Write-Host 'تمت الطباعة بنجاح' -ForegroundColor Green}
+      try{$printResult=Print-Job $job;Send-Result ([long]$job.id) $true '' ([int]$printResult.PageCount) ([long]$printResult.MaterialId) ([int]$printResult.ActualPages) ([int]$printResult.EstimatedSheets) ([int]$printResult.CoverPages);Write-Host 'تمت الطباعة بنجاح وتسجيل جرد الصفحات' -ForegroundColor Green}
       catch{Send-Result ([long]$job.id) $false $_.Exception.Message;Write-Host $_.Exception.Message -ForegroundColor Red}
     }
   }catch{

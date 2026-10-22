@@ -194,11 +194,12 @@
                         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                             <div>
                                 <h5 class="fw-bold text-primary mb-0"><i class="fa-solid fa-user-clock me-2"></i>تسجيل حضور وانصراف الدوام</h5>
-                                <small class="text-muted" id="hoursTracker">إجمالي ساعات الدوام المسجلة اليوم: 0 ساعة</small>
+                                <small class="text-muted" id="hoursTracker">دخول الحساب لا يبدأ الدوام. امسح رمز الفرع ثم اسمح بالموقع.</small>
                             </div>
                             <div class="d-flex gap-2">
                                 <button onclick="registerAttendance('دخول')" class="btn btn-success fw-bold"><i class="fa-solid fa-right-to-bracket me-1"></i> تسجيل دخول الدوام</button>
                                 <button onclick="registerAttendance('خروج')" class="btn btn-danger fw-bold"><i class="fa-solid fa-right-from-bracket me-1"></i> تسجيل خروج الدوام</button>
+                                <a href="attendance-kiosk.html" class="btn btn-primary fw-bold"><i class="fa-solid fa-qrcode me-1"></i> شاشة QR للفرع</a>
                             </div>
                         </div>
                     </div>
@@ -451,7 +452,7 @@
                     localStorage.setItem('employeeToken', data.token);
                     localStorage.setItem('employeeName', data.name);
                     localStorage.setItem('employeeRole', data.role);
-                    alert(`أهلاً بك ${data.name}! تم تسجيل دخولك وبدء احتساب ساعات العمل.`);
+                    alert(`أهلاً بك ${data.name}! دخلت إلى الحساب فقط. يبدأ احتساب الدوام بعد مسح رمز الفرع والتحقق من الموقع.`);
                     checkUserSession();
                 } else {
                     alert('خطأ: ' + (data.error || 'بيانات الدخول غير صحيحة'));
@@ -468,7 +469,7 @@
                 localStorage.removeItem('employeeToken');
                 localStorage.removeItem('employeeName');
                 localStorage.removeItem('employeeRole');
-                alert('تم تسجيل الخروج وإيقاف احتساب ساعات العمل.');
+                alert('تم تسجيل الخروج من الحساب. إذا كان دوامك مفتوحاً فيجب إنهاؤه من زر تسجيل خروج الدوام داخل الفرع.');
                 checkUserSession();
             }
         }
@@ -638,6 +639,7 @@
             });
         }
 
+        function attendanceTokenFromUrl(){const u=new URL(location.href),t=u.searchParams.get('attendanceToken');if(t){sessionStorage.setItem('attendanceToken',t);u.searchParams.delete('attendanceToken');history.replaceState({},'',u)}return t||sessionStorage.getItem('attendanceToken')||''}
         async function registerAttendance(type) {
             const empName=localStorage.getItem('employeeName')||'الموظف';
             const token=localStorage.getItem('employeeToken');
@@ -645,11 +647,14 @@
             try {
                 document.getElementById('hoursTracker').innerText='جاري تحديد موقعك…';
                 const locationData=await getAttendanceLocation();
+                const attendanceToken=attendanceTokenFromUrl();
+                if(!attendanceToken)throw new Error('امسح رمز QR المتغير المعروض داخل فرع المكتبة أولاً.');
                 const endpoint=type==='دخول'?'/api/attendance/check-in':'/api/attendance/check-out';
-                const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify(locationData)});
+                const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify({...locationData,attendanceToken})});
                 const data=await res.json();
                 if(!res.ok||!data.success)throw new Error(data.error||data.message||'تعذر تسجيل الدوام');
-                document.getElementById('hoursTracker').innerText=`تم تسجيل ${type} مع الموقع — دقة الموقع نحو ${Math.round(locationData.accuracy||0)} متر`;
+                sessionStorage.removeItem('attendanceToken');
+                document.getElementById('hoursTracker').innerText=`تم تسجيل ${type} بواسطة QR والموقع — دقة الموقع نحو ${Math.round(locationData.accuracy||0)} متر`;
                 alert(`${data.message||`تم تسجيل ${type}`} للموظف (${empName})`);
             } catch (err) {
                 document.getElementById('hoursTracker').innerText=err.message;
