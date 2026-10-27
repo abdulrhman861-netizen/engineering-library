@@ -47,3 +47,5 @@
   if('Notification'in window&&Notification.permission==='default')document.addEventListener('click',()=>Notification.requestPermission().catch(()=>{}),{once:true});
   check();setInterval(check,8000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)check()});
 })();
+if(!document.querySelector('link[href="/v7-theme.css"]')){const v7Theme=document.createElement('link');v7Theme.rel='stylesheet';v7Theme.href='/v7-theme.css';document.head.appendChild(v7Theme)}
+if(!document.querySelector('script[src="/v7-shell.js"]')){const v7Shell=document.createElement('script');v7Shell.src='/v7-shell.js';v7Shell.defer=true;document.head.appendChild(v7Shell)}

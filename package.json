@@ -1,6 +1,6 @@
 {
   "name": "iraqi-university-engineering-library",
-  "version": "6.5.0",
+  "version": "7.0.0",
   "private": true,
   "description": "مكتبة كلية الهندسة الرقمية - الجامعة العراقية",
   "main": "server.js",

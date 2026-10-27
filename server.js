@@ -42,6 +42,23 @@ app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
+// V7 design shell is injected into every HTML page so the visual system stays
+// consistent even on older utility and preview screens.
+app.use((req,res,next)=>{
+  if(req.method!=='GET')return next();
+  const pathname=decodeURIComponent(String(req.path||'/'));
+  if(pathname!=='/'&&!pathname.endsWith('.html'))return next();
+  const relative=pathname==='/'?'index.html':pathname.replace(/^\/+/, '');
+  const publicRoot=path.join(__dirname,'public');
+  const htmlPath=path.resolve(publicRoot,relative);
+  if(!htmlPath.startsWith(publicRoot+path.sep)||!fs.existsSync(htmlPath))return next();
+  try{
+    let html=fs.readFileSync(htmlPath,'utf8');
+    if(!html.includes('/v7-theme.css'))html=html.replace(/<\/head>/i,'<link rel="stylesheet" href="/v7-theme.css">\n</head>');
+    if(!html.includes('/v7-shell.js'))html=html.replace(/<\/body>/i,'<script src="/v7-shell.js"></script>\n</body>');
+    res.type('html').set('Cache-Control','no-cache').send(html);
+  }catch{return next();}
+});
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 

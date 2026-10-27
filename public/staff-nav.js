@@ -1,4 +1,6 @@
 (()=>{
+  if(!document.querySelector('link[href="/v7-theme.css"]')){const theme=document.createElement('link');theme.rel='stylesheet';theme.href='/v7-theme.css';document.head.appendChild(theme);}
+  if(!document.querySelector('script[src="/v7-shell.js"]')){const shell=document.createElement('script');shell.src='/v7-shell.js';shell.defer=true;document.head.appendChild(shell);}
   if(!localStorage.getItem('employeeToken'))return;
   if(!document.querySelector('link[href*="font-awesome"]')){const icons=document.createElement('link');icons.rel='stylesheet';icons.href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css';document.head.appendChild(icons);}
   const links=[
