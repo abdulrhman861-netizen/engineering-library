@@ -52,7 +52,7 @@
     <label for="studentFile" class="custom-file-upload">
         <span id="fileNameDisplay"><i class="fas fa-file-export me-1"></i> انقر هنا لاختيار الملف من جهازك</span>
     </label>
-    <input type="file" id="studentFile" multiple accept=".pdf, .doc, .docx, image/*" onchange="updateFileName()">
+    <input type="file" id="studentFile" multiple accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp,image/heic,image/heif" onchange="updateFileName()">
 
     <button onclick="uploadFileDirectly()" id="submitBtn" class="print-btn">
         <i class="fas fa-paper-plane"></i> إرسال للمكتبة
@@ -135,7 +135,7 @@
     function updatePrintType(){
         const identity=document.getElementById('printType').value==='ID_CARD';
         const input=document.getElementById('studentFile');
-        input.accept=identity?'image/*':'.pdf, .doc, .docx, image/*';
+        input.accept=identity?'image/jpeg,image/png,image/webp,image/heic,image/heif':'.pdf,.doc,.docx,image/jpeg,image/png,image/webp,image/heic,image/heif';
         input.value='';
         document.getElementById('fileNameDisplay').innerHTML=identity?'🪪 اختر صورتين بالترتيب: الوجه ثم الظهر':'<i class="fas fa-file-export me-1"></i> انقر هنا لاختيار ملف أو عدة ملفات';
     }

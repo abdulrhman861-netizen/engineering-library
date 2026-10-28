@@ -278,7 +278,10 @@
 
             <div class="col-12">
                 <div class="card card-custom p-4 bg-white">
-                    <h5 class="fw-bold text-primary mb-3"><i class="fa-solid fa-sitemap me-2"></i>إضافة قسم أو مرحلة</h5>
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                        <h5 class="fw-bold text-primary mb-0"><i class="fa-solid fa-sitemap me-2"></i>إدارة الأقسام والمراحل</h5>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadAcademicStructure()"><i class="fa-solid fa-rotate me-1"></i> تحديث القوائم</button>
+                    </div>
                     <div class="row g-3">
                         <form class="col-md-6 border-end" onsubmit="createDepartment(event)">
                             <label class="form-label fw-bold">قسم علمي جديد</label>
@@ -293,6 +296,18 @@
                             <button class="btn btn-primary">إضافة المرحلة</button>
                         </form>
                     </div>
+                    <hr class="my-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <h6 class="fw-bold"><i class="fa-solid fa-building-columns text-primary me-1"></i> الأقسام الظاهرة في التطبيق</h6>
+                            <div id="departmentsManager" class="list-group"><div class="text-muted py-2">جاري التحميل...</div></div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="fw-bold"><i class="fa-solid fa-layer-group text-success me-1"></i> المراحل الدراسية</h6>
+                            <div id="stagesManager" class="list-group"><div class="text-muted py-2">جاري التحميل...</div></div>
+                        </div>
+                    </div>
+                    <div class="alert alert-warning small mt-3 mb-0"><i class="fa-solid fa-triangle-exclamation me-1"></i> إذا كان القسم أو المرحلة يحتويان على ملازم، فسيتم إخفاؤهما من التطبيق مع الاحتفاظ بالملفات السابقة وعدم فقدانها.</div>
                 </div>
             </div>
 
@@ -338,6 +353,7 @@
                     loadTasks();
                     loadAttendanceReports();
                     loadAdminMaterials();
+                    loadAcademicStructure();
                 } else {
                     alert("رمز PIN غير صحيح!");
                 }
@@ -580,12 +596,33 @@
         async function createDepartment(e) {
             e.preventDefault();
             const res = await fetch('/api/admin/departments', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newDeptName.value,code:newDeptCode.value})});
-            const data = await res.json(); alert(data.success ? 'تمت إضافة القسم' : (data.error || 'تعذرت الإضافة')); if(data.success)e.target.reset();
+            const data = await res.json(); alert(data.success ? 'تمت إضافة القسم' : (data.error || 'تعذرت الإضافة')); if(data.success){e.target.reset();loadAcademicStructure();}
         }
         async function createStage(e) {
             e.preventDefault();
             const res = await fetch('/api/admin/stages', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newStageName.value,code:newStageCode.value})});
-            const data = await res.json(); alert(data.success ? 'تمت إضافة المرحلة' : (data.error || 'تعذرت الإضافة')); if(data.success)e.target.reset();
+            const data = await res.json(); alert(data.success ? 'تمت إضافة المرحلة' : (data.error || 'تعذرت الإضافة')); if(data.success){e.target.reset();loadAcademicStructure();}
+        }
+
+        async function loadAcademicStructure() {
+            const departmentsBox=document.getElementById('departmentsManager');
+            const stagesBox=document.getElementById('stagesManager');
+            try{
+                const [departmentsResponse,stagesResponse]=await Promise.all([fetch('/api/departments'),fetch('/api/stages')]);
+                const departments=await departmentsResponse.json(),stages=await stagesResponse.json();
+                departmentsBox.innerHTML=departments.length?departments.map(x=>`<div class="list-group-item d-flex justify-content-between align-items-center gap-2"><span><b>${escapeHtml(x.name)}</b><small class="d-block text-muted" dir="ltr">${escapeHtml(x.code)}</small></span><button class="btn btn-sm btn-outline-danger" onclick="deleteDepartment('${escapeHtml(x.code)}','${escapeHtml(x.name).replace(/'/g,'&#39;')}')"><i class="fa-solid fa-trash"></i> حذف</button></div>`).join(''):'<div class="text-muted py-2">لا توجد أقسام.</div>';
+                stagesBox.innerHTML=stages.length?stages.map(x=>`<div class="list-group-item d-flex justify-content-between align-items-center gap-2"><span><b>${escapeHtml(x.name)}</b><small class="d-block text-muted" dir="ltr">${escapeHtml(x.code)}</small></span><button class="btn btn-sm btn-outline-danger" onclick="deleteStage('${escapeHtml(x.code)}','${escapeHtml(x.name).replace(/'/g,'&#39;')}')"><i class="fa-solid fa-trash"></i> حذف</button></div>`).join(''):'<div class="text-muted py-2">لا توجد مراحل.</div>';
+            }catch(e){departmentsBox.innerHTML=stagesBox.innerHTML='<div class="text-danger py-2">تعذر تحميل القوائم.</div>';}
+        }
+        async function deleteDepartment(code,name){
+            if(!confirm(`حذف القسم «${name}» من التطبيق؟\n\nإذا كانت لديه ملازم فسيختفي القسم مع بقاء الملفات محفوظة.`))return;
+            const r=await fetch(`/api/admin/departments/${encodeURIComponent(code)}`,{method:'DELETE'}),d=await r.json();
+            alert(r.ok?(d.message||'تم حذف القسم'):(d.error||'تعذر حذف القسم'));if(r.ok)loadAcademicStructure();
+        }
+        async function deleteStage(code,name){
+            if(!confirm(`حذف المرحلة «${name}» من التطبيق؟\n\nإذا كانت لديها ملازم فستختفي المرحلة مع بقاء الملفات محفوظة.`))return;
+            const r=await fetch(`/api/admin/stages/${encodeURIComponent(code)}`,{method:'DELETE'}),d=await r.json();
+            alert(r.ok?(d.message||'تم حذف المرحلة'):(d.error||'تعذر حذف المرحلة'));if(r.ok)loadAcademicStructure();
         }
 
         // تسجيل الـ Service Worker للـ PWA

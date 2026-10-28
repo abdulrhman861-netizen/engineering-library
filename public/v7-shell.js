@@ -20,7 +20,17 @@
     }
     if(nav){document.body.classList.add('v7-has-sidebar');let head=document.querySelector('.v7-shell-title');if(!head){head=document.createElement('div');head.className='v7-shell-title';head.innerHTML=`<i class="fa-solid fa-layer-group"></i><span>${escapeHtml(title)}</span><b class="v7-version">V7</b>`;document.body.appendChild(head)}}
     document.querySelectorAll('.card').forEach((c,i)=>{if(i<6)c.classList.add('v7-kpi')});
+    installFoldableLists();
     document.addEventListener('click',e=>{const b=e.target.closest('.btn');if(!b||b.disabled)return;b.classList.remove('v7-click');void b.offsetWidth;b.classList.add('v7-click')});
+  }
+  function installFoldableLists(){
+    const targets=[];
+    if(page==='tasks-v2.html'){const x=document.querySelector('#list');if(x)targets.push([x,'قائمة المهام'])}
+    if(page==='staff-materials.html'){const x=document.querySelector('.table');if(x)targets.push([x,'قائمة الملازم'])}
+    if(page==='admin-tasks.html')document.querySelectorAll('.table').forEach((x,i)=>targets.push([x,i?'قائمة المهام':'قائمة الديون']));
+    if(page==='student-files.html'){const x=document.querySelector('#list');if(x)targets.push([x,'قائمة الملفات'])}
+    if(page==='admin.html'){const body=document.querySelector('#adminMaterialsTableBody'),x=body?.closest('.table-responsive');if(x)targets.push([x,'قائمة الملازم'])}
+    targets.forEach(([target,label],i)=>{if(target.dataset.v7Fold)return;target.dataset.v7Fold='1';target.classList.add('v7-scroll-region');const bar=document.createElement('div');bar.className='v7-fold-bar';bar.innerHTML=`<b><i class="fa-solid fa-list"></i> ${escapeHtml(label)}</b><button type="button" class="v7-fold-toggle"><i class="fa-solid fa-chevron-up"></i><span>طي القائمة</span></button>`;target.before(bar);bar.querySelector('button').addEventListener('click',()=>{const folded=target.classList.toggle('v7-folded'),btn=bar.querySelector('button');btn.querySelector('span').textContent=folded?'فتح القائمة':'طي القائمة';btn.querySelector('i').className=`fa-solid fa-chevron-${folded?'down':'up'}`})})
   }
   function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
   window.v7Toast=(message,type='ok')=>{const old=document.querySelector('.v7-toast');if(old)old.remove();const t=document.createElement('div');t.className=`v7-toast ${type}`;t.innerHTML=`<i class="fa-solid ${type==='error'?'fa-circle-xmark':'fa-circle-check'}"></i><span>${escapeHtml(message)}</span>`;document.body.appendChild(t);setTimeout(()=>t.remove(),3600)};

@@ -107,6 +107,8 @@
             const departments = await (await fetch('/api/departments')).json();
             const grid = document.getElementById('deptsGrid');
             departments.forEach(d => {
+                // إخفاء السجل القديم المكرر، والإبقاء على قسم الهندسة المعمارية الرسمي.
+                if (String(d.name || '').trim() === 'هندسة العمارة' && d.code !== 'architecture') return;
                 const existing=grid.querySelector(`[data-dept="${d.code}"]`) || [...grid.children].find(x => x.getAttribute('onclick')?.includes(`'${d.code}'`));
                 if(existing){const photo=existing.querySelector('.dept-photo');if(photo&&d.image_url){photo.style.backgroundImage=`url('${d.image_url}')`;photo.style.backgroundSize='cover';photo.style.backgroundPosition='center'}return;}
                 const card = document.createElement('div'); card.className='dept-card'; card.dataset.dept=d.code;
