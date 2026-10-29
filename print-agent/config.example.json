@@ -1,18 +1,18 @@
 {
-  "serverUrl": "http://localhost:3001",
-  "agentId": "LAPTOP-VH2JKUMB",
-  "token": "ضع_هنا_PRINT_AGENT_TOKEN",
+  "serverUrl": "https://engineering-library.onrender.com",
+  "agentId": "CHANGE-ME",
+  "token": "PUT_PRINT_AGENT_TOKEN_HERE",
   "pollSeconds": 5,
-  "materialsRoot": "D:\\EngineeringLibrary\\Materials",
-  "materialSyncMinutes": 5,
-  "enabled": false,
+  "enabled": true,
   "printers": {
-    "1": "Canon iR-ADV 8285/8295 UFR II111111111111111",
-    "2": "Canon iR-ADV 6275 UFR II222222222222222222",
-    "3": "3333333333333333",
-    "5": "Canon iR-ADV C5235/5240 UFR II555555555555555",
-    "8": "Canon iR-ADV C7280 UFR II8888888888",
-    "9": "Canon iR-ADV 8585/8595 UFR II999999999",
+    "1": "LIB-PRINTER-01-BW",
+    "2": "LIB-PRINTER-02-BW",
+    "3": "LIB-PRINTER-03-BW",
+    "5": "LIB-PRINTER-05-COLOR",
+    "8": "LIB-PRINTER-08-COLOR",
+    "9": "LIB-PRINTER-09-BW",
     "10": "HP PageWide Color Flow E58650 [83371B]"
-  }
+  },
+  "materialsRoot": "D:\\EngineeringLibrary\\Materials",
+  "materialSyncMinutes": 5
 }
