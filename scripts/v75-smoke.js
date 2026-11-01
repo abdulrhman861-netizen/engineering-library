@@ -1,0 +1,20 @@
+'use strict';
+const fs=require('fs');
+const assert=require('assert');
+const read=p=>fs.readFileSync(p,'utf8');
+const server=read('server.js'),agent=read('print-agent/print-agent.ps1');
+const teacher=read('public/teacher.html'),home=read('public/index.html');
+const sql=read('database/v7_5_upgrade.sql');
+
+assert.match(server,/batch_id,batch_position,batch_size/,'Telegram/upload batch fields missing');
+assert.match(server,/files:done/,'Telegram multi-file completion action missing');
+assert.match(server,/release-claimed/,'stale print release endpoint missing');
+assert.match(server,/print_history/,'print audit insertion missing');
+assert.match(server,/normalizeUploadName/,'iPhone upload filename normalization missing');
+assert.match(agent,/Where-Object\s*\{\$_.Name\s+-eq\s+\$printer\s*\}/,'literal printer-name check missing');
+assert.match(agent,/printerNumber -eq '10'/,'printer 10 settings missing');
+assert.match(teacher,/changePassword\(\)/,'teacher password UI missing');
+assert.match(server,/api\/auth\/change-password/,'password API missing');
+assert.match(home,/staffPortalLink[^>]+hidden/,'staff portal must be hidden for public students');
+assert.match(sql,/student_print_files_batch_idx/,'V7.5 migration missing');
+console.log('V7.5 smoke checks passed (11/11)');

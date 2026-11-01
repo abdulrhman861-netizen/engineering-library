@@ -153,7 +153,10 @@ function Print-Job($Job) {
   $printerProperty=$config.printers.PSObject.Properties[[string]$Job.printerNumber]
   if(-not $printerProperty){throw "الطابعة رقم $($Job.printerNumber) غير معرفة"}
   $printer=[string]$printerProperty.Value
-  if(-not(Get-Printer -Name $printer -ErrorAction SilentlyContinue)){throw "الطابعة غير مثبتة في Windows: $printer"}
+  # -Name treats [ and ] as wildcard syntax.  Printer 10 contains [83371B],
+  # therefore compare the literal Windows name instead.
+  $installedPrinter=Get-Printer -ErrorAction SilentlyContinue|Where-Object {$_.Name -eq $printer}|Select-Object -First 1
+  if(-not $installedPrinter){throw "الطابعة غير مثبتة في Windows: $printer"}
   $first=Get-LocalMaterial ([long]$Job.materialId)
   if($first){Write-Host "استخدام النسخة المحلية: $first" -ForegroundColor Green}else{$first=Download-JobFile ([string]$Job.url) ("$($Job.id)-1")}
   $toPrint=$first
@@ -177,7 +180,7 @@ function Print-Job($Job) {
   $coverPages=0
   if($Job.cover -and [bool]$Job.cover.enabled){
     $coverPdf=Make-CoverPdf $Job.cover ([long]$Job.id)
-    $coverSettings='1x,paper=A4,fit,bin=auto,ignore-pdf-print-settings,monochrome,simplex'
+    $coverSettings=if([string]$Job.printerNumber -eq '10'){'1x,paper=A4,fit,monochrome,simplex'}else{'1x,paper=A4,fit,bin=auto,ignore-pdf-print-settings,monochrome,simplex'}
     & $sumatra -silent -print-to $printer -print-settings $coverSettings $coverPdf
     # بعض تعريفات Canon تعيد رمز خروج غير صفري رغم نجاح إرسال الغلاف للطابعة.
     # لا نوقف الطلب هنا حتى تستمر طباعة الملزمة الأصلية مباشرة بعد الغلاف.
@@ -187,7 +190,11 @@ function Print-Job($Job) {
   $colorSetting=if($Job.colorMode -eq 'COLOR'){'color'}else{'monochrome'}
   $paperSetting=if($Job.paperSize -eq 'A3'){'paper=A3'}else{'paper=A4'}
   $duplexSetting=switch([string]$Job.duplexMode){'DUPLEX_LONG'{'duplexlong'}'DUPLEX_SHORT'{'duplexshort'}default{'simplex'}}
-  $printSettings=("{0}x,{1},fit,bin=auto,ignore-pdf-print-settings,{2},{3}" -f $copies,$paperSetting,$colorSetting,$duplexSetting)
+  $printSettings=if([string]$Job.printerNumber -eq '10'){
+    ("{0}x,{1},fit,{2},{3}" -f $copies,$paperSetting,$colorSetting,$duplexSetting)
+  }else{
+    ("{0}x,{1},fit,bin=auto,ignore-pdf-print-settings,{2},{3}" -f $copies,$paperSetting,$colorSetting,$duplexSetting)
+  }
   & $sumatra -silent -print-to $printer -print-settings $printSettings $toPrint
   if($LASTEXITCODE -ne 0){throw "SumatraPDF exit code $LASTEXITCODE"}
   $actualPages=([Math]::Max(1,$calculatedPages)*$copies)+$coverPages

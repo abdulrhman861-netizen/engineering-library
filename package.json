@@ -1,12 +1,13 @@
 {
   "name": "iraqi-university-engineering-library",
-  "version": "7.4.0",
+  "version": "7.5.0",
   "private": true,
   "description": "مكتبة كلية الهندسة الرقمية - الجامعة العراقية",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js"
+    "check": "node --check server.js",
+    "test:v75": "node scripts/v75-smoke.js"
   },
   "engines": {
     "node": "22.x"
@@ -21,4 +22,3 @@
     "pg": "^8.16.3"
   }
 }
-

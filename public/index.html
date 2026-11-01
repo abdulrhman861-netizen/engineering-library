@@ -98,9 +98,12 @@
 
 <div style="max-width:1200px;margin:0 auto 18px;padding:0 40px"><a href="teacher.html" class="dept-card" style="min-height:auto;background:linear-gradient(120deg,#073b70,#0c91a7);color:white"><i class="fas fa-chalkboard-user"></i><div class="dept-name" style="color:white">بوابة التدريسيين والدكاترة</div></a></div>
 
-<nav class="bottom-nav"><a class="active" href="index.html"><i class="fas fa-book-open"></i>واجهة الملازم</a><a href="students.html"><i class="fas fa-user-graduate"></i>بوابة الطلاب</a><a href="staff.html"><i class="fas fa-users-gear"></i>الكادر والإدارة</a></nav>
+<nav class="bottom-nav" id="publicNav"><a class="active" href="index.html"><i class="fas fa-book-open"></i>واجهة الملازم</a><a href="students.html"><i class="fas fa-user-graduate"></i>بوابة الطلاب</a><a id="staffPortalLink" href="staff.html" hidden><i class="fas fa-users-gear"></i>الكادر والإدارة</a></nav>
 
 <script>
+    // بوابة الكادر لا تظهر لزائر باركود الطلاب. تظهر فقط بعد وجود جلسة كادر.
+    if(localStorage.getItem('employeeToken'))document.getElementById('staffPortalLink').hidden=false;
+    else document.getElementById('publicNav').style.gridTemplateColumns='repeat(2,1fr)';
     // 1. توليد الـ QR تلقائياً بالاعتماد على IP السيرفر المباشر
     window.onload = async function() {
         try {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'library-app-online-v7-4-0';
+const CACHE_NAME = 'library-app-online-v7-5-0';
 
 // قائمة الملفات والصفحات الواجب تخزينها للأوفلاين
 const urlsToCache = [

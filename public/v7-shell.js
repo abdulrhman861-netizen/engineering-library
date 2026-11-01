@@ -18,7 +18,7 @@
       const source=new URLSearchParams(location.search).get('source');
       nav.innerHTML=links.map(([href,icon,label])=>{const u=new URL(href,location.origin),active=u.pathname.endsWith(page)&&(!u.searchParams.get('source')||u.searchParams.get('source')===source);return `<a href="/${href}" class="${active?'active':''}"><i class="fa-solid ${icon}"></i><span>${label}</span></a>`}).join('');document.body.appendChild(nav)
     }
-    if(nav){document.body.classList.add('v7-has-sidebar');let head=document.querySelector('.v7-shell-title');if(!head){head=document.createElement('div');head.className='v7-shell-title';head.innerHTML=`<i class="fa-solid fa-layer-group"></i><span>${escapeHtml(title)}</span><b class="v7-version">V7</b>`;document.body.appendChild(head)}}
+    if(nav){document.body.classList.add('v7-has-sidebar');let head=document.querySelector('.v7-shell-title');if(!head){head=document.createElement('div');head.className='v7-shell-title';head.innerHTML=`<i class="fa-solid fa-layer-group"></i><span>${escapeHtml(title)}</span><b class="v7-version">V7.5</b>`;document.body.appendChild(head)}}
     document.querySelectorAll('.card').forEach((c,i)=>{if(i<6)c.classList.add('v7-kpi')});
     installFoldableLists();
     document.addEventListener('click',e=>{const b=e.target.closest('.btn');if(!b||b.disabled)return;b.classList.remove('v7-click');void b.offsetWidth;b.classList.add('v7-click')});
