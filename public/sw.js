@@ -1,4 +1,4 @@
-const CACHE_NAME = 'library-app-online-v7-5-0';
+const CACHE_NAME = 'library-app-online-v7-6-0';
 
 // قائمة الملفات والصفحات الواجب تخزينها للأوفلاين
 const urlsToCache = [
@@ -14,6 +14,9 @@ const urlsToCache = [
   '/staff-materials.html',
   '/material-direct-print.html',
   '/id-editor.html',
+  '/document-studio.html',
+  '/document-studio.css',
+  '/document-studio.js',
   '/print-reports.html',
   '/material-staff-preview.html',
   '/admin.html',

@@ -1,0 +1,15 @@
+'use strict';
+const fs=require('fs'),assert=require('assert'),read=p=>fs.readFileSync(p,'utf8');
+const server=read('server.js'),agent=read('print-agent/print-agent.ps1'),studio=read('public/document-studio.js'),quick=read('public/quick-print.html'),sw=read('public/sw.js');
+assert.match(server,/information_schema\.columns[\s\S]+print_history/,'compatible print report query missing');
+assert.match(server,/coalesce\(sum/,'null-safe report totals missing');
+assert.match(agent,/function Convert-ImageToPdf/,'image-to-PDF conversion missing');
+assert.match(agent,/\.jpg'.*\.jpeg'.*\.png'.*\.webp'/s,'printable image extensions missing');
+assert.match(agent,/Max\(1,\[int\]\$config\.pollSeconds\)/,'one-second polling support missing');
+assert.match(studio,/passport-transaction/,'transaction packages missing');
+assert.match(studio,/autoCrop\.onclick/,'automatic crop missing');
+assert.match(studio,/function pdfBlob/,'client PDF export missing');
+assert.match(studio,/sendQueue\.onclick/,'queue submission missing');
+assert.match(quick,/document-studio\.html/,'quick-print studio entry missing');
+assert.match(sw,/library-app-online-v7-6-0/,'service worker cache version missing');
+console.log('V7.6 smoke checks passed (11/11)');

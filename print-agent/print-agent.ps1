@@ -8,6 +8,9 @@ $headers = @{ 'x-print-agent-token' = [string]$config.token }
 $sumatra = Join-Path $env:LOCALAPPDATA 'SumatraPDF\SumatraPDF.exe'
 if (-not (Test-Path $sumatra)) { $sumatra = Join-Path $env:ProgramFiles 'SumatraPDF\SumatraPDF.exe' }
 if (-not (Test-Path $sumatra)) { throw 'SumatraPDF غير مثبت' }
+$edge = Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'
+if (-not (Test-Path $edge)) { $edge = Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe' }
+if (-not (Test-Path $edge)) { throw 'Microsoft Edge غير موجود' }
 $work = Join-Path $env:ProgramData 'EngineeringLibrary\PrintAgent'
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 $materialsRoot=if([string]$config.materialsRoot){[string]$config.materialsRoot}else{'D:\EngineeringLibrary\Materials'}
@@ -112,15 +115,23 @@ function Get-PdfPageCount([string]$PdfPath) {
   }catch{}
   return 1
 }
+function Convert-ImageToPdf([string]$ImagePath,[long]$Id) {
+  if(-not $ImagePath -or -not(Test-Path $ImagePath)){throw 'مسار الصورة فارغ أو غير موجود'}
+  $html=Join-Path $work "$Id-image.html";$pdf=Join-Path $work "$Id-image.pdf"
+  if(Test-Path $pdf){Remove-Item $pdf -Force}
+  $imageUri=([uri]$ImagePath).AbsoluteUri
+  $markup="<html><head><meta charset='utf-8'><style>@page{size:A4;margin:0}html,body{margin:0;width:210mm;height:297mm}.page{width:210mm;height:297mm;display:flex;align-items:center;justify-content:center;overflow:hidden}.page img{max-width:100%;max-height:100%;object-fit:contain}</style></head><body><div class='page'><img src='$imageUri'></div></body></html>"
+  Set-Content -Path $html -Value $markup -Encoding UTF8
+  Start-Process -FilePath $edge -ArgumentList '--headless','--disable-gpu','--no-pdf-header-footer',"--print-to-pdf=$pdf",([uri]$html).AbsoluteUri -Wait
+  if(-not(Test-Path $pdf) -or (Get-Item $pdf).Length -lt 100){throw 'تعذر تحويل الصورة إلى PDF للطباعة'}
+  return $pdf
+}
 function Make-IdPdf([string]$Front,[string]$Back,[string]$Passport,[long]$Id) {
   $html=Join-Path $work "$Id-id.html";$pdf=Join-Path $work "$Id-id.pdf"
   $frontUri=([uri]$Front).AbsoluteUri;$backUri=([uri]$Back).AbsoluteUri;$passportMarkup=''
   if($Passport){$passportUri=([uri]$Passport).AbsoluteUri;$passportMarkup="<img class='passport' src='$passportUri'>"}
   $markup="<html><head><meta charset='utf-8'><style>@page{size:A4;margin:0}body{margin:0}.sheet{width:210mm;height:297mm;padding:20mm;box-sizing:border-box;display:flex;gap:10mm;align-content:flex-start;justify-content:center;flex-wrap:wrap}.card{width:85.6mm;height:54mm;object-fit:contain}.passport{width:90mm;height:125mm;object-fit:contain;flex-basis:100%}</style></head><body><div class='sheet'><img class='card' src='$frontUri'><img class='card' src='$backUri'>$passportMarkup</div></body></html>"
   Set-Content -Path $html -Value $markup -Encoding UTF8
-  $edge=Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'
-  if(-not(Test-Path $edge)){$edge=Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'}
-  if(-not(Test-Path $edge)){throw 'Microsoft Edge غير موجود لتنسيق الهوية'}
   Start-Process -FilePath $edge -ArgumentList '--headless','--disable-gpu',"--print-to-pdf=$pdf",([uri]$html).AbsoluteUri -Wait
   if(-not(Test-Path $pdf)){throw 'تعذر تجهيز صفحة الهوية'}
   return $pdf
@@ -141,9 +152,6 @@ function Make-CoverPdf($Cover,[long]$Id) {
   }catch{Write-Host 'تعذر جلب شعار كلية الهندسة؛ ستُطبع الواجهة النصية.' -ForegroundColor DarkYellow}
   $markup="<html dir='rtl'><head><meta charset='utf-8'><style>@page{size:A4;margin:0}*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;color:#10233e}.sheet{width:210mm;height:297mm;padding:18mm 25mm;display:flex;align-items:center;justify-content:center}.box{width:100%;border:3px solid #0759a5;border-radius:18px;padding:14mm 16mm 18mm;text-align:center}.logo{width:58mm;height:35mm;object-fit:contain;display:block;margin:0 auto 6mm}.brand{font-size:21pt;font-weight:700;color:#087f4f;margin-bottom:11mm}.label{font-size:15pt;color:#59697d;margin-top:8mm}.value{font-size:26pt;font-weight:700;margin-top:3mm;line-height:1.45}.pages{font-size:21pt}.footer{margin-top:14mm;border-top:2px solid #d0a124;padding-top:7mm;font-size:12pt;color:#66758a}</style></head><body><div class='sheet'><div class='box'>$logoMarkup<div class='brand'>مكتبة كلية الهندسة الرقمية</div><div class='label'>اسم الملزمة</div><div class='value'>$title</div><div class='label'>اسم التدريسي</div><div class='value'>$doctor</div><div class='label'>عدد صفحات الملزمة</div><div class='value pages'>$pages صفحة</div><div class='footer'>ورقة تعريف تلقائية — لا تدخل ضمن عدد صفحات الملزمة</div></div></div></body></html>"
   Set-Content -Path $html -Value $markup -Encoding UTF8
-  $edge=Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'
-  if(-not(Test-Path $edge)){$edge=Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'}
-  if(-not(Test-Path $edge)){throw 'Microsoft Edge غير موجود لتجهيز ورقة التعريف'}
   if(Test-Path $pdf){Remove-Item $pdf -Force}
   Start-Process -FilePath $edge -ArgumentList '--headless','--disable-gpu','--no-pdf-header-footer',"--print-to-pdf=$pdf",([uri]$html).AbsoluteUri -Wait
   if(-not(Test-Path $pdf)){throw 'تعذر تجهيز ورقة تعريف الملزمة'}
@@ -166,6 +174,10 @@ function Print-Job($Job) {
     $third=$null
     if($Job.thirdUrl){$third=Download-JobFile ([string]$Job.thirdUrl) ("$($Job.id)-3")}
     $toPrint=Make-IdPdf $first $second $third ([long]$Job.id)
+  }
+  $imageExt=[IO.Path]::GetExtension($toPrint).ToLowerInvariant()
+  if($imageExt -in @('.jpg','.jpeg','.png','.webp','.bmp','.gif','.heic','.heif')){
+    $toPrint=Convert-ImageToPdf $toPrint ([long]$Job.id)
   }
   $calculatedPages=0
   $ext=[IO.Path]::GetExtension($toPrint).ToLowerInvariant();$copies=[Math]::Max(1,[int]$Job.copies)
@@ -221,5 +233,5 @@ while($true){
   }catch{
     if($_.Exception.Response.StatusCode.value__ -ne 204){Write-Host "تعذر الاتصال بالخادم: $($_.Exception.Message)" -ForegroundColor DarkYellow}
   }
-  Start-Sleep -Seconds ([Math]::Max(2,[int]$config.pollSeconds))
+  Start-Sleep -Seconds ([Math]::Max(1,[int]$config.pollSeconds))
 }

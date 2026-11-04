@@ -2,7 +2,7 @@
   "serverUrl": "https://engineering-library.onrender.com",
   "agentId": "CHANGE-ME",
   "token": "PUT_PRINT_AGENT_TOKEN_HERE",
-  "pollSeconds": 5,
+  "pollSeconds": 1,
   "enabled": true,
   "printers": {
     "1": "LIB-PRINTER-01-BW",
