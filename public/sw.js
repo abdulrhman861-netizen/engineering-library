@@ -1,6 +1,6 @@
-const CACHE_NAME = 'library-app-online-v7-6-0';
+﻿const CACHE_NAME = 'library-app-online-v7-6-1-ios-upload-fix';
 
-// قائمة الملفات والصفحات الواجب تخزينها للأوفلاين
+// ظ‚ط§ط¦ظ…ط© ط§ظ„ظ…ظ„ظپط§طھ ظˆط§ظ„طµظپط­ط§طھ ط§ظ„ظˆط§ط¬ط¨ طھط®ط²ظٹظ†ظ‡ط§ ظ„ظ„ط£ظˆظپظ„ط§ظٹظ†
 const urlsToCache = [
   '/',
   '/index.html',
@@ -44,7 +44,7 @@ const urlsToCache = [
   ,'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
 ];
 
-// 1. تثبيت الـ Service Worker وتخزين الملفات الأساسية
+// 1. طھط«ط¨ظٹطھ ط§ظ„ظ€ Service Worker ظˆطھط®ط²ظٹظ† ط§ظ„ظ…ظ„ظپط§طھ ط§ظ„ط£ط³ط§ط³ظٹط©
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -55,7 +55,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// 2. تنظيف التخزين القديم عند التحديث
+// 2. طھظ†ط¸ظٹظپ ط§ظ„طھط®ط²ظٹظ† ط§ظ„ظ‚ط¯ظٹظ… ط¹ظ†ط¯ ط§ظ„طھط­ط¯ظٹط«
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -72,23 +72,28 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// 3. الاستجابة للطلبات (تخطي طلبات الـ API وإرجاع الملفات المخزنة للواجهات)
+// 3. ط§ظ„ط§ط³طھط¬ط§ط¨ط© ظ„ظ„ط·ظ„ط¨ط§طھ (طھط®ط·ظٹ ط·ظ„ط¨ط§طھ ط§ظ„ظ€ API ظˆط¥ط±ط¬ط§ط¹ ط§ظ„ظ…ظ„ظپط§طھ ط§ظ„ظ…ط®ط²ظ†ط© ظ„ظ„ظˆط§ط¬ظ‡ط§طھ)
 self.addEventListener('fetch', (event) => {
   const reqUrl = new URL(event.request.url);
 
-  // عدم تخزين طلبات الـ API أو الرفع لضمان وصول البيانات الحية دائماً
-  if (reqUrl.pathname.startsWith('/api/') || reqUrl.pathname.startsWith('/upload')) {
+  // ط¹ط¯ظ… طھط®ط²ظٹظ† ط·ظ„ط¨ط§طھ ط§ظ„ظ€ API ط£ظˆ ط§ظ„ط±ظپط¹ ظ„ط¶ظ…ط§ظ† ظˆطµظˆظ„ ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ط­ظٹط© ط¯ط§ط¦ظ…ط§ظ‹
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
+  // طلبات API الحية لا تُخزن
+  if (reqUrl.pathname.startsWith('/api/')) {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // صفحات HTML من الشبكة أولاً حتى تصل التحديثات فوراً.
+  // طµظپط­ط§طھ HTML ظ…ظ† ط§ظ„ط´ط¨ظƒط© ط£ظˆظ„ط§ظ‹ ط­طھظ‰ طھطµظ„ ط§ظ„طھط­ط¯ظٹط«ط§طھ ظپظˆط±ط§ظ‹.
   if (event.request.mode === 'navigate' || reqUrl.pathname.endsWith('.html') || reqUrl.pathname === '/') {
     event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
     return;
   }
 
-  // استراتيجية Cache First للملفات الثابتة فقط
+  // ط§ط³طھط±ط§طھظٹط¬ظٹط© Cache First ظ„ظ„ظ…ظ„ظپط§طھ ط§ظ„ط«ط§ط¨طھط© ظپظ‚ط·
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -107,4 +112,5 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
 
