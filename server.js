@@ -374,10 +374,26 @@ app.get('/api/whatsapp/webhook',(req,res)=>{
   res.sendStatus(403);
 });
 app.post('/api/whatsapp/webhook',(req,res)=>{
-  if(!whatsappConfigured())return res.sendStatus(503);
-  if(!whatsappSignatureValid(req))return res.sendStatus(401);
+  console.log('WhatsApp webhook received:', {
+    object:req.body?.object||'unknown',
+    entries:Array.isArray(req.body?.entry)?req.body.entry.length:0,
+    hasSignature:Boolean(req.headers['x-hub-signature-256'])
+  });
+
+  if(!whatsappConfigured()){
+    console.error('WhatsApp webhook rejected: configuration incomplete');
+    return res.sendStatus(503);
+  }
+
+  if(!whatsappSignatureValid(req)){
+    console.error('WhatsApp webhook rejected: invalid Meta signature');
+    return res.sendStatus(401);
+  }
+
+  console.log('WhatsApp webhook signature accepted');
   res.sendStatus(200);
-  Promise.resolve(handleWhatsAppWebhook(req.body)).catch(e=>console.error('WhatsApp webhook failed:',e.message));
+  Promise.resolve(handleWhatsAppWebhook(req.body))
+    .catch(e=>console.error('WhatsApp webhook failed:',e.message));
 });
 app.get('/api/whatsapp/status',(_req,res)=>res.json({success:true,configured:whatsappConfigured(),webhook:`${APP_BASE_URL}/api/whatsapp/webhook`}));
 
