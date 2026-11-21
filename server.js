@@ -292,6 +292,23 @@ async function whatsappSendText(phoneNumberId,to,body){
     body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to,type:'text',text:{preview_url:false,body}})
   });
 }
+function validWhatsAppStudentName(value=''){
+  const name=String(value).replace(/^\s*(?:اسمي|الاسم)\s*[:：-]?\s*/i,'').replace(/\s+/g,' ').trim();
+  if(name.length<5||name.length>150||!/[\p{L}]/u.test(name)||/^\+?\d+$/.test(name))return '';
+  return name;
+}
+async function whatsappStudent(phone){
+  const result=await pool.query('select student_name from whatsapp_students where phone=$1 limit 1',[phone]);
+  return result.rows[0]?.student_name||'';
+}
+async function saveWhatsAppStudent(phone,studentName,profileName=''){
+  await pool.query(`insert into whatsapp_students(phone,student_name,profile_name,updated_at)
+    values($1,$2,$3,now())
+    on conflict(phone) do update set student_name=excluded.student_name,
+      profile_name=excluded.profile_name,updated_at=now()`,[phone,studentName,profileName]);
+  await pool.query(`update student_print_files set student_name=$1
+    where phone=$2 and source_type='WHATSAPP'`,[studentName,phone]);
+}
 function extensionForMime(mime=''){
   const map={
     'application/pdf':'.pdf','application/msword':'.doc',
@@ -316,15 +333,29 @@ async function whatsappDownloadMedia(message){
   if(!originalName)originalName=`whatsapp-${message.id||Date.now()}${extensionForMime(mime)||'.jpg'}`;
   const ext=path.extname(originalName).toLowerCase();
   const allowed=['.pdf','.doc','.docx','.jpg','.jpeg','.png','.webp','.heic','.heif'];
-  if(!allowed.includes(ext))throw new Error('Ù†ÙˆØ¹ Ù…Ù„Ù WhatsApp ØºÙŠØ± Ù…Ø¯Ø¹ÙˆÙ…');
+  if(!allowed.includes(ext))throw new Error('نوع ملف واتساب غير مدعوم');
   return normalizeUploadName({originalname:originalName,mimetype:mime,buffer});
 }
 async function handleWhatsAppMessage(message,contact,phoneNumberId){
   if(!message?.id||!message?.from)return;
-  const sender=String(message.from),studentName=String(contact?.profile?.name||`WhatsApp ${sender}`).slice(0,150);
+  const sender=String(message.from),phone=`+${sender}`;
+  const profileName=String(contact?.profile?.name||'').trim().slice(0,150);
+  const registeredName=await whatsappStudent(phone);
+  if(message.type==='text'){
+    const name=validWhatsAppStudentName(message.text?.body||'');
+    if(name){
+      await saveWhatsAppStudent(phone,name,profileName);
+      await whatsappSendText(phoneNumberId,sender,`تم حفظ اسمك بنجاح ✅\nالاسم: ${name}\nرقم الهاتف: ${phone}\nيمكنك الآن إرسال الصور أو ملفات PDF وWord للطباعة.`);
+    }else{
+      await whatsappSendText(phoneNumberId,sender,registeredName
+        ? `أهلًا ${registeredName} 👋\nأرسل صورة أو ملف PDF أو Word للطباعة، واكتب ملاحظات الطباعة مع الملف.`
+        : 'أهلًا بك في مكتبة الهندسة 👋\nيرجى كتابة اسمك الثلاثي أولًا، مثال:\nاسمي: عبدالرحمن أيمن محمد');
+    }
+    return;
+  }
   if(!['image','document'].includes(message.type)){
     if(['audio','video','sticker'].includes(message.type)){
-      await whatsappSendText(phoneNumberId,sender,'ÙŠØ±Ø¬Ù‰ Ø¥Ø±Ø³Ø§Ù„ ØµÙˆØ±Ø© Ø£Ùˆ Ù…Ù„Ù PDF Ø£Ùˆ Word Ù„Ù„Ø·Ø¨Ø§Ø¹Ø©.');
+      await whatsappSendText(phoneNumberId,sender,'يرجى إرسال صورة أو ملف PDF أو Word للطباعة.');
     }
     return;
   }
@@ -341,11 +372,15 @@ async function handleWhatsAppMessage(message,contact,phoneNumberId){
       estimated_price_iqd,payment_status,telegram_request_key,source_type
     ) values($1,$2,$3,'DOCUMENT',1,'BW',$4,$5,$6,$7,$8,'UNPAID',$9,'WHATSAPP')
     on conflict(telegram_request_key) where telegram_request_key is not null do nothing returning file_id`,[
-      file.originalname,stored.url,stored.storagePath,studentName,`+${sender}`,
-      caption?`ÙˆØ§Ø±Ø¯ Ù…Ù† WhatsApp â€” ${caption}`:'ÙˆØ§Ø±Ø¯ Ù…Ù† WhatsApp',pages,tgPrice(pages,1,'BW','A4','SIMPLEX'),requestKey
+      file.originalname,stored.url,stored.storagePath,registeredName||profileName||`WhatsApp ${sender}`,phone,
+      caption?`وارد من واتساب — ${caption}`:'وارد من واتساب',pages,tgPrice(pages,1,'BW','A4','SIMPLEX'),requestKey
     ]);
     if(!inserted.rowCount){await removeStored(stored.storagePath,stored.url);return;}
-    await whatsappSendText(phoneNumberId,sender,`ØªÙ… Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ù…Ù„Ù Ø¨Ù†Ø¬Ø§Ø­ âœ…\nØ±Ù‚Ù… Ø§Ù„Ø·Ù„Ø¨: #${inserted.rows[0].file_id}\nØ§Ù„Ø·Ø¨Ø§Ø¹Ø© Ø§Ù„Ø§ÙØªØ±Ø§Ø¶ÙŠØ©: Ø£Ø³ÙˆØ¯ ÙˆØ£Ø¨ÙŠØ¶ØŒ Ù†Ø³Ø®Ø© ÙˆØ§Ø­Ø¯Ø©. Ø£Ø¶Ù Ø§Ù„Ù…Ù„Ø§Ø­Ø¸Ø§Øª Ù…Ø¹ Ø§Ù„ØµÙˆØ±Ø© Ø£Ùˆ Ø§Ù„Ù…Ù„ÙØŒ Ø£Ùˆ Ø§ØªØµÙ„ Ø¨Ø§Ù„Ù…ÙƒØªØ¨Ø© Ù„Ù„ØªØ¹Ø¯ÙŠÙ„.`);
+    const orderId=inserted.rows[0].file_id;
+    const reply=registeredName
+      ? `تم استلام ملفك بنجاح ✅\nرقم الطلب: #${orderId}\nالاسم: ${registeredName}\nرقم الهاتف: ${phone}\nالطباعة الافتراضية: أسود وأبيض، نسخة واحدة.\nاكتب ملاحظاتك مع أي ملف جديد.`
+      : `تم استلام ملفك بنجاح ✅\nرقم الطلب: #${orderId}\nرقم الهاتف: ${phone}\n\nلإكمال تسجيل الطلب، يرجى الرد الآن باسمك الثلاثي، مثال:\nاسمي: عبدالرحمن أيمن محمد`;
+    await whatsappSendText(phoneNumberId,sender,reply);
   }catch(e){
     await removeStored(stored.storagePath,stored.url).catch(()=>{});
     throw e;
@@ -361,7 +396,7 @@ async function handleWhatsAppWebhook(body){
         try{await handleWhatsAppMessage(message,contacts.get(String(message.from))||value.contacts?.[0],phoneNumberId);}
         catch(e){
           console.error('WhatsApp message failed:',message?.id,e.message);
-          try{await whatsappSendText(phoneNumberId,String(message?.from||''),'ØªØ¹Ø°Ø± Ø§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ù…Ù„Ù Ø­Ø§Ù„ÙŠØ§Ù‹. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ø±Ø© Ø£Ø®Ø±Ù‰ Ø£Ùˆ Ø§Ø³ØªØ®Ø¯Ø§Ù… ØµÙØ­Ø© Ø±ÙØ¹ Ø§Ù„Ù…Ù„ÙØ§Øª ÙÙŠ ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…ÙƒØªØ¨Ø©.');}catch{}
+          try{await whatsappSendText(phoneNumberId,String(message?.from||''),'تعذر استلام الملف حاليًا. يرجى المحاولة مرة أخرى أو استخدام صفحة رفع الملفات في تطبيق المكتبة.');}catch{}
         }
       }
     }
@@ -894,6 +929,18 @@ app.use((err,_req,res,_next)=>{ const requestId=crypto.randomUUID().slice(0,8);c
 app.listen(PORT,'0.0.0.0',async()=>{
   console.log(`Engineering Library: http://localhost:${PORT}`);
   if (IS_PRODUCTION) console.log('Online production mode enabled');
+  if(pool){
+    try{
+      await pool.query(`create table if not exists whatsapp_students(
+        phone text primary key,
+        student_name text not null,
+        profile_name text,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )`);
+      console.log('WhatsApp student registry ready');
+    }catch(e){console.error('WhatsApp student registry setup failed:',e.message);}
+  }
   if(TELEGRAM_BOT_TOKEN&&APP_BASE_URL){
     try{await telegramApi('setWebhook',{url:`${APP_BASE_URL}/api/telegram/webhook`,secret_token:TELEGRAM_WEBHOOK_SECRET,allowed_updates:['message','callback_query'],drop_pending_updates:false});console.log('Telegram webhook enabled');}
     catch(e){console.error('Telegram webhook setup failed:',e.message);}
