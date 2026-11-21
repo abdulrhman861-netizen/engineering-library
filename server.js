@@ -20,6 +20,10 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BUCKET = process.env.SUPABASE_BUCKET || 'library-files';
 const PRINT_AGENT_TOKEN = process.env.PRINT_AGENT_TOKEN || '';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || '';
+const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || '';
+const META_APP_SECRET = process.env.META_APP_SECRET || '';
+const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION || 'v27.0';
 const APP_BASE_URL = String(process.env.RENDER_EXTERNAL_URL || process.env.APP_BASE_URL || '').replace(/\/$/,'');
 const TELEGRAM_WEBHOOK_SECRET = TELEGRAM_BOT_TOKEN ? crypto.createHash('sha256').update(TELEGRAM_BOT_TOKEN).digest('hex') : '';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -62,7 +66,10 @@ const upload = multer({
 
 app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({
+  limit: '2mb',
+  verify:(req,_res,buffer)=>{ req.rawBody=Buffer.from(buffer); }
+}));
 app.use(express.urlencoded({ extended: true }));
 // V7 design shell is injected into every HTML page so the visual system stays
 // consistent even on older utility and preview screens.
@@ -257,6 +264,122 @@ app.post('/api/telegram/webhook',async(req,res)=>{
   Promise.resolve(req.body.callback_query?handleTelegramCallback(req.body.callback_query):req.body.message?handleTelegramMessage(req.body.message):null).catch(e=>console.error('Telegram update failed:',e.message));
 });
 app.get('/api/telegram/status',(_req,res)=>res.json({success:true,configured:Boolean(TELEGRAM_BOT_TOKEN),username:'EngineeringLibraryPrintBot'}));
+
+function whatsappConfigured(){
+  return Boolean(WHATSAPP_ACCESS_TOKEN&&WHATSAPP_VERIFY_TOKEN&&META_APP_SECRET);
+}
+function whatsappSignatureValid(req){
+  const supplied=String(req.headers['x-hub-signature-256']||'');
+  if(!META_APP_SECRET||!req.rawBody?.length||!supplied.startsWith('sha256='))return false;
+  const expected=`sha256=${crypto.createHmac('sha256',META_APP_SECRET).update(req.rawBody).digest('hex')}`;
+  return supplied.length===expected.length&&crypto.timingSafeEqual(Buffer.from(supplied),Buffer.from(expected));
+}
+async function whatsappGraph(pathname,options={}){
+  if(!WHATSAPP_ACCESS_TOKEN)throw new Error('WhatsApp access token is not configured');
+  const response=await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${pathname}`,{
+    ...options,
+    headers:{authorization:`Bearer ${WHATSAPP_ACCESS_TOKEN}`,...(options.headers||{})}
+  });
+  if(!response.ok)throw new Error(`WhatsApp API failed (${response.status}): ${await response.text()}`);
+  const type=String(response.headers.get('content-type')||'');
+  return type.includes('application/json')?response.json():response;
+}
+async function whatsappSendText(phoneNumberId,to,body){
+  if(!phoneNumberId||!to||!body)return;
+  await whatsappGraph(`${phoneNumberId}/messages`,{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',to,type:'text',text:{preview_url:false,body}})
+  });
+}
+function extensionForMime(mime=''){
+  const map={
+    'application/pdf':'.pdf','application/msword':'.doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document':'.docx',
+    'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp',
+    'image/heic':'.heic','image/heif':'.heif'
+  };
+  return map[String(mime).toLowerCase().split(';')[0]]||'';
+}
+async function whatsappDownloadMedia(message){
+  const kind=message.type,media=message[kind]||{},mediaId=String(media.id||'');
+  if(!['image','document'].includes(kind)||!mediaId)throw new Error('Unsupported WhatsApp message type');
+  const meta=await whatsappGraph(mediaId);
+  const declaredSize=Number(meta.file_size||0);
+  if(declaredSize>MAX_UPLOAD_MB*1024*1024)throw new Error(`WhatsApp file exceeds ${MAX_UPLOAD_MB}MB`);
+  const response=await fetch(meta.url,{headers:{authorization:`Bearer ${WHATSAPP_ACCESS_TOKEN}`}});
+  if(!response.ok)throw new Error(`WhatsApp media download failed (${response.status})`);
+  const buffer=Buffer.from(await response.arrayBuffer());
+  if(!buffer.length||buffer.length>MAX_UPLOAD_MB*1024*1024)throw new Error(`WhatsApp file is empty or exceeds ${MAX_UPLOAD_MB}MB`);
+  const mime=String(meta.mime_type||media.mime_type||response.headers.get('content-type')||'application/octet-stream').split(';')[0];
+  let originalName=kind==='document'?String(media.filename||'').trim():'';
+  if(!originalName)originalName=`whatsapp-${message.id||Date.now()}${extensionForMime(mime)||'.jpg'}`;
+  const ext=path.extname(originalName).toLowerCase();
+  const allowed=['.pdf','.doc','.docx','.jpg','.jpeg','.png','.webp','.heic','.heif'];
+  if(!allowed.includes(ext))throw new Error('نوع ملف WhatsApp غير مدعوم');
+  return normalizeUploadName({originalname:originalName,mimetype:mime,buffer});
+}
+async function handleWhatsAppMessage(message,contact,phoneNumberId){
+  if(!message?.id||!message?.from)return;
+  const sender=String(message.from),studentName=String(contact?.profile?.name||`WhatsApp ${sender}`).slice(0,150);
+  if(!['image','document'].includes(message.type)){
+    if(['audio','video','sticker'].includes(message.type)){
+      await whatsappSendText(phoneNumberId,sender,'يرجى إرسال صورة أو ملف PDF أو Word للطباعة.');
+    }
+    return;
+  }
+  const requestKey=`whatsapp:${message.id}`;
+  const exists=await pool.query('select file_id from student_print_files where telegram_request_key=$1 limit 1',[requestKey]);
+  if(exists.rowCount)return;
+  const file=await whatsappDownloadMedia(message);
+  const stored=await storeFile(file,'whatsapp-print-orders');
+  const pages=estimatePageCount(file)||1;
+  const caption=String(message[message.type]?.caption||'').trim().slice(0,500);
+  try{
+    const inserted=await pool.query(`insert into student_print_files(
+      original_name,file_path,storage_path,print_type,copies,color_mode,student_name,phone,notes,page_count,
+      estimated_price_iqd,payment_status,telegram_request_key,source_type
+    ) values($1,$2,$3,'DOCUMENT',1,'BW',$4,$5,$6,$7,$8,'UNPAID',$9,'WHATSAPP')
+    on conflict(telegram_request_key) where telegram_request_key is not null do nothing returning file_id`,[
+      file.originalname,stored.url,stored.storagePath,studentName,`+${sender}`,
+      caption?`وارد من WhatsApp — ${caption}`:'وارد من WhatsApp',pages,tgPrice(pages,1,'BW','A4','SIMPLEX'),requestKey
+    ]);
+    if(!inserted.rowCount){await removeStored(stored.storagePath,stored.url);return;}
+    await whatsappSendText(phoneNumberId,sender,`تم استلام الملف بنجاح ✅\nرقم الطلب: #${inserted.rows[0].file_id}\nالطباعة الافتراضية: أسود وأبيض، نسخة واحدة. أضف الملاحظات مع الصورة أو الملف، أو اتصل بالمكتبة للتعديل.`);
+  }catch(e){
+    await removeStored(stored.storagePath,stored.url).catch(()=>{});
+    throw e;
+  }
+}
+async function handleWhatsAppWebhook(body){
+  if(body?.object!=='whatsapp_business_account'||!pool)return;
+  for(const entry of body.entry||[]){
+    for(const change of entry.changes||[]){
+      const value=change.value||{},phoneNumberId=value.metadata?.phone_number_id;
+      const contacts=new Map((value.contacts||[]).map(x=>[String(x.wa_id||''),x]));
+      for(const message of value.messages||[]){
+        try{await handleWhatsAppMessage(message,contacts.get(String(message.from))||value.contacts?.[0],phoneNumberId);}
+        catch(e){
+          console.error('WhatsApp message failed:',message?.id,e.message);
+          try{await whatsappSendText(phoneNumberId,String(message?.from||''),'تعذر استلام الملف حالياً. يرجى المحاولة مرة أخرى أو استخدام صفحة رفع الملفات في تطبيق المكتبة.');}catch{}
+        }
+      }
+    }
+  }
+}
+app.get('/api/whatsapp/webhook',(req,res)=>{
+  if(!WHATSAPP_VERIFY_TOKEN)return res.sendStatus(503);
+  const mode=String(req.query['hub.mode']||''),token=String(req.query['hub.verify_token']||''),challenge=String(req.query['hub.challenge']||'');
+  if(mode==='subscribe'&&token.length===WHATSAPP_VERIFY_TOKEN.length&&crypto.timingSafeEqual(Buffer.from(token),Buffer.from(WHATSAPP_VERIFY_TOKEN)))return res.status(200).send(challenge);
+  res.sendStatus(403);
+});
+app.post('/api/whatsapp/webhook',(req,res)=>{
+  if(!whatsappConfigured())return res.sendStatus(503);
+  if(!whatsappSignatureValid(req))return res.sendStatus(401);
+  res.sendStatus(200);
+  Promise.resolve(handleWhatsAppWebhook(req.body)).catch(e=>console.error('WhatsApp webhook failed:',e.message));
+});
+app.get('/api/whatsapp/status',(_req,res)=>res.json({success:true,configured:whatsappConfigured(),webhook:`${APP_BASE_URL}/api/whatsapp/webhook`}));
 
 app.get('/api/health', async (_req,res) => {
   if (!pool) return res.json({ success:true, database:false, mode:'setup-required' });
