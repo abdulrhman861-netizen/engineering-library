@@ -7,7 +7,7 @@ const teacher=read('public/teacher.html'),home=read('public/index.html');
 const sql=read('database/v7_5_upgrade.sql');
 
 assert.match(server,/batch_id,batch_position,batch_size/,'Telegram/upload batch fields missing');
-assert.match(server,/files:done/,'Telegram multi-file completion action missing');
+assert.match(server,/return intakeTelegramFile\(message,directDoc,directPhoto\)/,'Telegram direct file intake missing');
 assert.match(server,/release-claimed/,'stale print release endpoint missing');
 assert.match(server,/print_history/,'print audit insertion missing');
 assert.match(server,/normalizeUploadName/,'iPhone upload filename normalization missing');

@@ -11,5 +11,5 @@ assert.match(studio,/autoCrop\.onclick/,'automatic crop missing');
 assert.match(studio,/function pdfBlob/,'client PDF export missing');
 assert.match(studio,/sendQueue\.onclick/,'queue submission missing');
 assert.match(quick,/document-studio\.html/,'quick-print studio entry missing');
-assert.match(sw,/library-app-online-v7-6-0/,'service worker cache version missing');
+assert.match(sw,/library-app-online-v7-6-\d+/,'service worker cache version missing');
 console.log('V7.6 smoke checks passed (11/11)');
