@@ -640,6 +640,29 @@ app.get('/api/student-files',auth,async(req,res)=>{
   const r=await pool.query(`select f.file_id as id,f.original_name as "originalName",f.file_path as url,f.second_file_path as "secondUrl",f.third_file_path as "thirdUrl",f.print_type as "printType",f.copies,f.color_mode,f.page_count as "pageCount",f.paper_size as "paperSize",f.duplex_mode as "duplexMode",f.status,f.student_name,f.phone,f.student_number,f.source_type as "sourceType",f.source_material_id as "sourceMaterialId",f.doctor_name as "doctorName",f.notes,f.created_at as time,f.direct_print_status as "directPrintStatus",f.printer_number as "printerNumber",f.print_error as "printError",f.telegram_chat_id as "telegramChatId",f.estimated_price_iqd as "estimatedPriceIqd",f.payment_status as "paymentStatus",f.batch_id as "batchId",f.batch_position as "batchPosition",f.batch_size as "batchSize",q.full_name as "queuedByName",c.full_name as "completedByName",x.full_name as "cancelledByName" from student_print_files f left join users q on q.user_id=f.queued_by left join users c on c.user_id=f.completed_by left join users x on x.user_id=f.cancelled_by where f.status<>'CANCELLED' and f.archived_at is null ${where} order by f.created_at desc limit 1000`,[staffSources]);
   res.json(r.rows);
 });
+app.post('/api/student-files/group-whatsapp-images',auth,async(req,res)=>{
+  const ids=[...new Set(Array.isArray(req.body.ids)?req.body.ids:[])];
+  if(ids.length<2||ids.length>100||!ids.every(id=>Number.isSafeInteger(id)&&id>0)){
+    return res.status(400).json({success:false,error:'حدد صورتين إلى 100 صورة.'});
+  }
+  const batchId=crypto.randomUUID();
+  const result=await pool.query(`with locked as materialized (
+    select file_id,phone,created_at from student_print_files
+    where file_id=any($1::bigint[]) and source_type='WHATSAPP'
+      and phone is not null and phone<>'' and status='QUEUED' and direct_print_status='MANUAL'
+      and archived_at is null and batch_id is null
+      and original_name ~* '[.](jpe?g|png|webp|heic|heif)$'
+    order by file_id for update
+  ), ordered as (
+    select file_id,row_number() over(order by created_at,file_id)::int as position from locked
+    where (select count(*) from locked)=cardinality($1::bigint[])
+      and (select count(distinct phone) from locked)=1
+  )
+  update student_print_files f set batch_id=$2,batch_position=o.position,batch_size=cardinality($1::bigint[])
+  from ordered o where f.file_id=o.file_id returning f.file_id`,[ids,batchId]);
+  if(!result.rowCount)return res.status(409).json({success:false,error:'اختر صور واتساب من رقم واحد، غير مجمّعة ولم تُرسل للطباعة.'});
+  res.json({success:true,batchId,count:result.rowCount});
+});
 app.get('/api/student-files/:id',auth,async(req,res)=>{const r=await pool.query('select file_id as id,original_name as "originalName",file_path as url,second_file_path as "secondUrl",print_type as "printType",copies,color_mode,student_name,phone,notes from student_print_files where file_id=$1',[req.params.id]);if(!r.rowCount)return res.status(404).json({success:false,error:'Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯'});res.json(r.rows[0]);});
 app.patch('/api/student-files/:id/status',auth,async(req,res)=>{ const status=['QUEUED','PRINTING','COMPLETED','CANCELLED'].includes(req.body.status)?req.body.status:'QUEUED'; await pool.query("update student_print_files set status=$1,completed_by=case when $1='COMPLETED' then $2 else completed_by end,completed_at=case when $1='COMPLETED' then now() else completed_at end where file_id=$3",[status,req.user.userId,req.params.id]); res.json({success:true}); });
 app.post('/api/student-files/:id/direct-print',auth,async(req,res)=>{
@@ -775,7 +798,14 @@ app.post('/api/accounting/entries',auth,accounting,async(req,res)=>{
   const r=await pool.query('insert into financial_entries(entry_date,entry_type,category,description,amount,payment_method,created_by,spent_by,entry_source) values(coalesce($1,current_date),$2,$3,$4,$5,$6,$7,$8,$9) returning *',[req.body.entryDate||null,type,category,String(req.body.description||'').trim(),amount,method,req.user.userId,String(req.body.spentBy||'').trim()||null,'MANUAL']);
   res.json({success:true,entry:r.rows[0]});
 });
-app.get('/api/accounting/entries',auth,accounting,async(req,res)=>{const {from,to}=dateRange(req);const r=await pool.query(`select f.*,u.full_name created_by_name from financial_entries f left join users u on u.user_id=f.created_by where entry_date between $1 and $2 and f.deleted_at is null order by entry_date desc,created_at desc limit 1000`,[from,to]);res.json({success:true,entries:r.rows,from,to});});
+function displayPartnerShareDescription(entry){
+  const prefix='ØªØ³Ø¯ÙŠØ¯ Ø­ØµØ© Ø§Ù„Ø´Ø±ÙŠÙƒ: ';
+  if(entry.category!=='PARTNER_SHARE'||!entry.description?.startsWith(prefix))return entry.description;
+  const original=entry.description.slice(prefix.length);
+  const settlement=original.replace(/ â€” ØªØ³ÙˆÙŠØ© (\d{4}-\d{2}-\d{2}) Ø¥Ù„Ù‰ (\d{4}-\d{2}-\d{2})(?: â€” )?/,(_match,from,to)=>` — تسوية ${from} إلى ${to}${_match.endsWith(' â€” ')?' — ':''}`);
+  return 'تسديد حصة الشريك: '+(settlement===original?original.replace(' â€” ',' — '):settlement);
+}
+app.get('/api/accounting/entries',auth,accounting,async(req,res)=>{const {from,to}=dateRange(req);const r=await pool.query(`select f.*,u.full_name created_by_name from financial_entries f left join users u on u.user_id=f.created_by where entry_date between $1 and $2 and f.deleted_at is null order by entry_date desc,created_at desc limit 1000`,[from,to]);res.json({success:true,entries:r.rows.map(entry=>({...entry,description:displayPartnerShareDescription(entry)})),from,to});});
 app.patch('/api/accounting/entries/:id',auth,admin,async(req,res)=>{const type=['INCOME','EXPENSE'].includes(req.body.entryType)?req.body.entryType:null,category=['SALES','SALARY','RENT','ELECTRICITY','POS_COMMISSION','SUPPLIES','OTHER'].includes(req.body.category)?req.body.category:null,method=['CASH','GREEN_CARD','BLACK_CARD','BANK'].includes(req.body.paymentMethod)?req.body.paymentMethod:'CASH',amount=Number(req.body.amount),date=/^\d{4}-\d{2}-\d{2}$/.test(req.body.entryDate||'')?req.body.entryDate:null;if(!type||!category||!date||!Number.isFinite(amount)||amount<0)return res.status(400).json({success:false,error:'Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø­Ø±ÙƒØ© Ø§Ù„Ù…Ø§Ù„ÙŠØ© ØºÙŠØ± ØµØ­ÙŠØ­Ø©'});const client=await pool.connect();try{await client.query('begin');const old=await client.query('select * from financial_entries where entry_id=$1 and deleted_at is null for update',[req.params.id]);if(!old.rowCount){await client.query('rollback');return res.status(404).json({success:false,error:'Ø§Ù„Ù‚ÙŠØ¯ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ Ø£Ùˆ Ù…Ø­Ø°ÙˆÙ'});}const updated=await client.query('update financial_entries set entry_date=$1,entry_type=$2,category=$3,description=$4,amount=$5,payment_method=$6,spent_by=$7,updated_at=now(),updated_by=$8 where entry_id=$9 returning *',[date,type,category,String(req.body.description||'').trim(),amount,method,String(req.body.spentBy||'').trim()||null,req.user.userId,req.params.id]);await client.query("insert into financial_entry_audit(entry_id,action,old_values,new_values,changed_by) values($1,'UPDATE',$2,$3,$4)",[req.params.id,old.rows[0],updated.rows[0],req.user.userId]);await client.query('commit');res.json({success:true,entry:updated.rows[0]});}catch(e){await client.query('rollback');throw e;}finally{client.release();}});
 app.delete('/api/accounting/entries/:id',auth,admin,async(req,res)=>{const client=await pool.connect();try{await client.query('begin');const old=await client.query('select * from financial_entries where entry_id=$1 and deleted_at is null for update',[req.params.id]);if(!old.rowCount){await client.query('rollback');return res.status(404).json({success:false,error:'Ø§Ù„Ù‚ÙŠØ¯ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ Ø£Ùˆ Ù…Ø­Ø°ÙˆÙ'});}await client.query('update financial_entries set deleted_at=now(),deleted_by=$1 where entry_id=$2',[req.user.userId,req.params.id]);await client.query("insert into financial_entry_audit(entry_id,action,old_values,changed_by) values($1,'DELETE',$2,$3)",[req.params.id,old.rows[0],req.user.userId]);await client.query('commit');res.json({success:true,message:'ØªÙ… Ø­Ø°Ù Ø§Ù„Ù‚ÙŠØ¯ Ù…Ø¹ Ø­ÙØ¸Ù‡ ÙÙŠ Ø³Ø¬Ù„ Ø§Ù„ØªØ¯Ù‚ÙŠÙ‚'});}catch(e){await client.query('rollback');throw e;}finally{client.release();}});
 app.post('/api/staff/daily-closing',auth,async(req,res)=>{
