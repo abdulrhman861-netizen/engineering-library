@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
@@ -343,22 +343,10 @@ async function handleWhatsAppMessage(message,contact,phoneNumberId){
   const registeredName=await whatsappStudent(phone);
   if(message.type==='text'){
     const name=validWhatsAppStudentName(message.text?.body||'');
-    if(name){
-      await saveWhatsAppStudent(phone,name,profileName);
-      await whatsappSendText(phoneNumberId,sender,`تم حفظ اسمك بنجاح ✅\nالاسم: ${name}\nرقم الهاتف: ${phone}\nيمكنك الآن إرسال الصور أو ملفات PDF وWord للطباعة.`);
-    }else{
-      await whatsappSendText(phoneNumberId,sender,registeredName
-        ? `أهلًا ${registeredName} 👋\nأرسل صورة أو ملف PDF أو Word للطباعة، واكتب ملاحظات الطباعة مع الملف.`
-        : 'أهلًا بك في مكتبة الهندسة 👋\nيرجى كتابة اسمك الثلاثي أولًا، مثال:\nاسمي: عبدالرحمن أيمن محمد');
-    }
+    if(name)await saveWhatsAppStudent(phone,name,profileName);
     return;
   }
-  if(!['image','document'].includes(message.type)){
-    if(['audio','video','sticker'].includes(message.type)){
-      await whatsappSendText(phoneNumberId,sender,'يرجى إرسال صورة أو ملف PDF أو Word للطباعة.');
-    }
-    return;
-  }
+  if(!['image','document'].includes(message.type))return;
   const requestKey=`whatsapp:${message.id}`;
   const exists=await pool.query('select file_id from student_print_files where telegram_request_key=$1 limit 1',[requestKey]);
   if(exists.rowCount)return;
@@ -376,11 +364,6 @@ async function handleWhatsAppMessage(message,contact,phoneNumberId){
       caption?`وارد من واتساب — ${caption}`:'وارد من واتساب',pages,tgPrice(pages,1,'BW','A4','SIMPLEX'),requestKey
     ]);
     if(!inserted.rowCount){await removeStored(stored.storagePath,stored.url);return;}
-    const orderId=inserted.rows[0].file_id;
-    const reply=registeredName
-      ? `تم استلام ملفك بنجاح ✅\nرقم الطلب: #${orderId}\nالاسم: ${registeredName}\nرقم الهاتف: ${phone}\nالطباعة الافتراضية: أسود وأبيض، نسخة واحدة.\nاكتب ملاحظاتك مع أي ملف جديد.`
-      : `تم استلام ملفك بنجاح ✅\nرقم الطلب: #${orderId}\nرقم الهاتف: ${phone}\n\nلإكمال تسجيل الطلب، يرجى الرد الآن باسمك الثلاثي، مثال:\nاسمي: عبدالرحمن أيمن محمد`;
-    await whatsappSendText(phoneNumberId,sender,reply);
   }catch(e){
     await removeStored(stored.storagePath,stored.url).catch(()=>{});
     throw e;
